@@ -44,7 +44,6 @@ npm start
 ```
 
 - **لوحة التحكم (Frontend Unified):** `http://localhost:5000/`
-- **النسخة المستقلة (Direct WSS Backup):** `http://localhost:5000/standalone.html`
 - **رابط التوثيق التفاعلي (Swagger UI):** `http://localhost:5000/api-docs`
 - **نقطة الـ API الأساسية:** `http://localhost:5000/api`
 - **بث WebSocket المباشر:** `ws://localhost:5000/ws/telemetry`
