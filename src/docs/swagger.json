@@ -1,0 +1,412 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "ElectroNova IoT Smart Power Strip API",
+    "version": "1.0.0",
+    "description": "API documentation for ElectroNova Smart Power Strip v4.1. Designed for Flutter Mobile App, Web Dashboards, and IoT Clients.",
+    "contact": {
+      "name": "ElectroNova Team - Al-Azhar Engineering",
+      "email": "team@electronova.local"
+    }
+  },
+  "servers": [
+    {
+      "url": "/api",
+      "description": "Active Server (Production / Local)"
+    },
+    {
+      "url": "http://localhost:5000/api",
+      "description": "Local Development Server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "email": { "type": "string" },
+          "role": { "type": "string", "example": "owner" }
+        }
+      },
+      "Outlet": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "name": { "type": "string", "example": "Router / Critical Equipment" },
+          "priority": { "type": "integer", "example": 1 },
+          "state": { "type": "boolean", "example": true },
+          "currentAmps": { "type": "number", "example": 1.2 },
+          "currentWatts": { "type": "integer", "example": 264 },
+          "totalKwh": { "type": "number", "example": 0.125 }
+        }
+      },
+      "SafetyStatus": {
+        "type": "object",
+        "properties": {
+          "temperatureC": { "type": "number", "example": 32.5 },
+          "totalAmps": { "type": "number", "example": 4.8 },
+          "totalWatts": { "type": "integer", "example": 1050 },
+          "totalKwh": { "type": "number", "example": 2.45 },
+          "costEgp": { "type": "number", "example": 3.06 },
+          "isOverheatLocked": { "type": "boolean", "example": false },
+          "isOverloadBlocked": { "type": "boolean", "example": false },
+          "alert": { "type": "string", "example": "OK" }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "User Login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "example": "admin@electronova.local" },
+                  "password": { "type": "string", "example": "123456" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Login successful, returns JWT Token" },
+          "401": { "description": "Invalid credentials" }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Register New Account",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "email", "password"],
+                "properties": {
+                  "name": { "type": "string", "example": "Ahmed Salem" },
+                  "email": { "type": "string", "example": "ahmed@example.com" },
+                  "password": { "type": "string", "example": "pass1234" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Account registered" },
+          "409": { "description": "Email already exists" }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": ["Authentication"],
+        "summary": "Get Current Logged-in User Profile",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Current user profile" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/outlets": {
+      "get": {
+        "tags": ["Outlets"],
+        "summary": "Get all 4 outlets status and metrics",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "List of outlets with states and live power metrics" }
+        }
+      }
+    },
+    "/outlets/{id}": {
+      "post": {
+        "tags": ["Outlets"],
+        "summary": "Turn specific outlet ON or OFF",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "enum": [1, 2, 3, 4] } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["state"],
+                "properties": {
+                  "state": { "type": "boolean", "example": true }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Command published and outlet toggled" },
+          "403": { "description": "Blocked by Overheat (>65°C) or Overload (>16A) Safety Engine" }
+        }
+      }
+    },
+    "/outlets/all": {
+      "post": {
+        "tags": ["Outlets"],
+        "summary": "Master Switch: Turn ALL outlets ON or OFF",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["state"],
+                "properties": {
+                  "state": { "type": "boolean", "example": true }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Master command executed" },
+          "403": { "description": "Blocked by Overheat safety lock" }
+        }
+      }
+    },
+    "/outlets/{id}/timer": {
+      "post": {
+        "tags": ["Outlets"],
+        "summary": "Set a countdown timer on an outlet",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "enum": [1, 2, 3, 4] } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["delaySec"],
+                "properties": {
+                  "delaySec": { "type": "integer", "example": 60, "description": "Seconds to delay before toggle" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Countdown timer set" }
+        }
+      }
+    },
+    "/voice/command": {
+      "post": {
+        "tags": ["Voice Control"],
+        "summary": "Process Arabic or English voice commands",
+        "description": "Receives transcribed voice text, parses intent via NLP engine, executes the command, and returns audio/text feedback.",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["transcript"],
+                "properties": {
+                  "transcript": { "type": "string", "example": "شغل الراوتر" },
+                  "language": { "type": "string", "example": "ar", "enum": ["ar", "en"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Voice command recognized and executed successfully" },
+          "403": { "description": "Voice command rejected by safety lock" },
+          "422": { "description": "Voice command could not be parsed into actionable intent" }
+        }
+      }
+    },
+    "/telemetry/live": {
+      "get": {
+        "tags": ["Telemetry"],
+        "summary": "Get real-time live telemetry",
+        "responses": {
+          "200": { "description": "Live readings (temperature, total amps, watts, kWh, alert status)" }
+        }
+      }
+    },
+    "/telemetry/history": {
+      "get": {
+        "tags": ["Telemetry"],
+        "summary": "Get recent telemetry history points",
+        "responses": {
+          "200": { "description": "Array of past readings for charts" }
+        }
+      }
+    },
+    "/telemetry/logs": {
+      "get": {
+        "tags": ["Telemetry"],
+        "summary": "Get live audit logs and system event stream",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Recent event log entries" }
+        }
+      }
+    },
+    "/telemetry/energy/reset": {
+      "post": {
+        "tags": ["Telemetry"],
+        "summary": "Reset cumulative kWh energy counter in ESP32 NVS",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Energy counter reset command sent" }
+        }
+      }
+    },
+    "/telemetry/sync": {
+      "post": {
+        "tags": ["Telemetry"],
+        "summary": "Request instant state synchronization from ESP32",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Sync command dispatched" }
+        }
+      }
+    },
+    "/telemetry/device": {
+      "post": {
+        "tags": ["Telemetry"],
+        "summary": "Switch active deviceId (e.g., EN_SIM1 or hardware EN_XXXX)",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["deviceId"],
+                "properties": {
+                  "deviceId": { "type": "string", "example": "EN_SIM1" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Active deviceId switched and MQTT topics updated" }
+        }
+      }
+    },
+    "/schedules": {
+      "get": {
+        "tags": ["Schedules"],
+        "summary": "Get 24-hour daily schedules for all outlets",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Daily NTP schedules" }
+        }
+      }
+    },
+    "/schedules/{id}": {
+      "post": {
+        "tags": ["Schedules"],
+        "summary": "Save daily schedule for specific outlet",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "enum": [1, 2, 3, 4] } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["enabled", "onTime", "offTime"],
+                "properties": {
+                  "enabled": { "type": "boolean", "example": true },
+                  "onTime": { "type": "string", "example": "08:00" },
+                  "offTime": { "type": "string", "example": "23:00" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Schedule saved on ESP32 and Backend" }
+        }
+      }
+    },
+    "/safety/status": {
+      "get": {
+        "tags": ["Safety & Protection"],
+        "summary": "Get comprehensive safety metrics and trip thresholds",
+        "responses": {
+          "200": { "description": "Detailed safety status and trip thresholds" }
+        }
+      }
+    },
+    "/safety/unlock": {
+      "post": {
+        "tags": ["Safety & Protection"],
+        "summary": "Manually reset safety lock after overheat cooldown",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Safety lock reset successfully" },
+          "400": { "description": "Cannot unlock: Temperature still unsafe" }
+        }
+      }
+    },
+    "/safety/sequential-restore": {
+      "post": {
+        "tags": ["Safety & Protection"],
+        "summary": "Trigger staggered sequential power restore (Anti-Inrush Current)",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "delayMs": { "type": "integer", "example": 3000 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Sequential restore initiated" }
+        }
+      }
+    },
+    "/analytics/energy": {
+      "get": {
+        "tags": ["Analytics & Billing"],
+        "summary": "Get energy consumption analysis, tariff billing, and projections",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Full energy analytics breakdown" }
+        }
+      }
+    }
+  }
+}

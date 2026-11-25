@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>ElectroNova Cloud Dashboard | المشترك الذكي</title>
+
+  <!-- Tailwind CSS & FontAwesome -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="min-h-screen flex flex-col justify-between overflow-x-hidden">
+
+  <!-- ── Header ── -->
+  <header class="glass-card md:sticky md:top-0 z-40 px-3 sm:px-6 lg:px-8 py-3 border-b border-gray-800/80">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      
+      <!-- Brand & Title -->
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 rounded-xl bg-gradient-to-tr from-cyan-500 to-emerald-500 flex items-center justify-center text-white shadow-lg shadow-cyan-500/25">
+            <i class="fa-solid fa-bolt text-lg sm:text-xl"></i>
+          </div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <h1 class="text-lg sm:text-xl font-black tracking-wide text-white truncate">ElectroNova</h1>
+              <span class="ltr text-[10px] sm:text-[11px] bg-emerald-950/80 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded-full font-mono-num shrink-0">v4.2 Unified</span>
+            </div>
+            <p class="text-[11px] text-gray-400 truncate">المشترك الكهربائي الذكي • هندسة الأزهر</p>
+          </div>
+        </div>
+
+        <!-- Mobile Controls Toggle -->
+        <div class="flex md:hidden items-center gap-1.5">
+          <button onclick="openAnalyticsModal()" title="تحليلات الطاقة" class="p-2 rounded-lg bg-gray-800 text-yellow-400">
+            <i class="fa-solid fa-chart-pie"></i>
+          </button>
+          <a href="/api-docs" target="_blank" title="توثيق الـ API" class="p-2 rounded-lg bg-gray-800 text-cyan-400">
+            <i class="fa-solid fa-book"></i>
+          </a>
+          <button id="btnAuthMobile" onclick="openAuthModal()" class="p-2 rounded-lg bg-gray-800 text-gray-300">
+            <i class="fa-solid fa-user-lock"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Status & Actions Bar -->
+      <div class="flex items-center flex-wrap gap-1.5 sm:gap-2">
+        
+        <!-- Live Clock -->
+        <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-900/90 border border-gray-700/80 text-[11px] sm:text-xs">
+          <i class="fa-regular fa-clock text-cyan-400"></i>
+          <span id="espClock" class="font-mono-num text-white font-bold">--:--:--</span>
+          <span class="ltr text-[9px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono-num">UTC+2</span>
+        </div>
+
+        <!-- Active Device ID Switcher -->
+        <button onclick="promptSwitchDevice()" title="تغيير Device ID (مثلاً EN_SIM1 أو EN_XXXX)"
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-900/90 border border-cyan-800/60 text-cyan-300 hover:border-cyan-500 text-[11px] sm:text-xs font-mono-num transition">
+          <i class="fa-solid fa-microchip text-cyan-400"></i>
+          <span id="activeDeviceId" class="ltr">EN_SIM1</span>
+        </button>
+
+        <!-- ESP32 Status Badge (Click to Sync) -->
+        <button id="espBadge" onclick="requestSync()" title="اضغط لطلب مزامنة فورية من الـ ESP32"
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-800/90 border border-gray-700 text-gray-400 text-[11px] sm:text-xs font-semibold cursor-pointer transition hover:scale-105">
+          <span id="espDot" class="w-2 h-2 rounded-full bg-gray-500"></span>
+          <span id="espText">ESP32: انتظار</span>
+        </button>
+
+        <!-- Cloud WebSocket Badge -->
+        <div id="connBadge" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-yellow-950/60 border border-yellow-700/50 text-yellow-400 text-[11px] sm:text-xs font-semibold">
+          <span id="connDot" class="w-2 h-2 rounded-full bg-yellow-400 animate-ping"></span>
+          <span id="connText">السحابة: اتصال...</span>
+        </div>
+
+        <!-- Analytics & Billing Button -->
+        <button onclick="openAnalyticsModal()" title="تحليلات الفاتورة واستهلاك الطاقة"
+          class="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-lg bg-yellow-950/60 border border-yellow-700/60 text-yellow-300 hover:bg-yellow-900/60 text-xs font-bold transition">
+          <i class="fa-solid fa-chart-pie"></i>
+          <span>الفاتورة</span>
+        </button>
+
+        <!-- Swagger Docs Link -->
+        <a href="/api-docs" target="_blank" title="فتح توثيق Swagger التفاعلي"
+          class="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-lg bg-cyan-950/60 border border-cyan-700/60 text-cyan-300 hover:bg-cyan-900/60 text-xs font-bold transition">
+          <i class="fa-solid fa-book-bookmark"></i>
+          <span class="ltr">API Docs</span>
+        </a>
+
+        <!-- User Profile / Login -->
+        <div id="userBadge" class="hidden items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-950/60 border border-purple-700/60 text-purple-300 text-xs font-bold">
+          <i class="fa-solid fa-user-circle"></i>
+          <span id="userName">مهندس</span>
+        </div>
+        <button id="btnAuth" onclick="openAuthModal()"
+          class="hidden md:flex items-center gap-1 px-3 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 text-xs font-bold transition">
+          <i class="fa-solid fa-user-lock"></i>
+          <span>تسجيل دخول</span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ── Emergency Safety Alert Banner ── -->
+  <div id="alertBanner" class="hidden px-4 py-2.5 bg-rose-600/95 text-white font-bold text-xs sm:text-sm text-center flex flex-wrap items-center justify-center gap-3 shadow-lg neon-red">
+    <div class="flex items-center gap-2">
+      <i class="fa-solid fa-triangle-exclamation text-base animate-bounce"></i>
+      <span id="alertMsg">تحذير أمان عاجل!</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="triggerSafetyUnlock()" class="px-2.5 py-1 rounded bg-black/40 hover:bg-black/60 border border-white/20 text-xs">
+        فك القفل يدوياً
+      </button>
+      <button onclick="triggerSequentialRestore()" class="px-2.5 py-1 rounded bg-black/40 hover:bg-black/60 border border-white/20 text-xs">
+        استعادة تدريجية (3 ثوانٍ)
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Main Dashboard Content ── -->
+  <main class="max-w-7xl mx-auto w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-5 flex-1 space-y-4 sm:space-y-5">
+
+    <!-- KPI Grid -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      
+      <!-- Temperature KPI -->
+      <div class="glass-card rounded-2xl p-3.5 sm:p-4 min-w-0">
+        <div class="flex items-center justify-between text-gray-400 mb-1">
+          <span class="text-[11px] sm:text-xs font-bold truncate">الحرارة <span class="ltr text-gray-500">(DS18B20 / DHT)</span></span>
+          <i class="fa-solid fa-temperature-half text-amber-400 text-sm sm:text-base shrink-0"></i>
+        </div>
+        <div class="ltr flex items-baseline gap-1 my-1">
+          <span id="valTemp" class="text-2xl sm:text-3xl font-black font-mono-num text-white">--.-</span>
+          <span class="text-xs sm:text-base text-gray-400 font-bold">°C</span>
+        </div>
+        <div class="w-full bg-gray-700/50 h-1.5 rounded-full mt-2 overflow-hidden">
+          <div id="barTemp" class="bg-emerald-500 h-full transition-all duration-300" style="width: 35%"></div>
+        </div>
+        <div class="flex justify-between text-[10px] sm:text-[11px] text-gray-400 mt-1.5">
+          <span>آمن <span class="ltr">&lt;60°</span></span>
+          <span class="text-rose-400">قفل فوري <span class="ltr">&gt;65°</span></span>
+        </div>
+      </div>
+
+      <!-- Current Amps KPI -->
+      <div class="glass-card rounded-2xl p-3.5 sm:p-4 min-w-0">
+        <div class="flex items-center justify-between text-gray-400 mb-1">
+          <span class="text-[11px] sm:text-xs font-bold truncate">التيار الكلي</span>
+          <i class="fa-solid fa-bolt-lightning text-cyan-400 text-sm sm:text-base shrink-0"></i>
+        </div>
+        <div class="flex items-baseline justify-between gap-1 my-1 flex-wrap">
+          <span class="ltr flex items-baseline gap-1">
+            <span id="valAmps" class="text-2xl sm:text-3xl font-black font-mono-num text-cyan-400">0.0</span>
+            <span class="text-xs sm:text-base text-gray-400 font-bold">A</span>
+          </span>
+          <span class="ltr text-[10px] text-gray-500 font-mono-num">/ 16A Max</span>
+        </div>
+        <div class="w-full bg-gray-700/50 h-1.5 rounded-full mt-2 overflow-hidden">
+          <div id="barAmps" class="bg-cyan-500 h-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <div class="flex justify-between text-[10px] sm:text-[11px] text-gray-400 mt-1.5">
+          <span>مستمر آمن <span class="ltr">12.8A</span></span>
+          <span class="text-rose-400">فصل <span class="ltr">&gt;16A</span></span>
+        </div>
+      </div>
+
+      <!-- Power Watts & Voltage KPI -->
+      <div class="glass-card rounded-2xl p-3.5 sm:p-4 min-w-0">
+        <div class="flex items-center justify-between text-gray-400 mb-1">
+          <span class="text-[11px] sm:text-xs font-bold truncate">القدرة والجهد</span>
+          <i class="fa-solid fa-gauge-high text-emerald-400 text-sm sm:text-base shrink-0"></i>
+        </div>
+        <div class="ltr flex items-baseline gap-1 my-1">
+          <span id="valWatts" class="text-2xl sm:text-3xl font-black font-mono-num text-emerald-400">0</span>
+          <span class="text-xs sm:text-base text-gray-400 font-bold">W</span>
+        </div>
+        <div class="flex items-center justify-between text-[10px] sm:text-[11px] text-gray-400 mt-3 pt-1.5 border-t border-gray-800/80">
+          <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>WebSocket حي</span>
+          <span id="valVolts" class="ltr font-mono-num text-cyan-400">220.0V AC</span>
+        </div>
+      </div>
+
+      <!-- Energy & Billing KPI -->
+      <div class="glass-card rounded-2xl p-3.5 sm:p-4 min-w-0">
+        <div class="flex items-center justify-between text-gray-400 mb-1 gap-1">
+          <span class="text-[11px] sm:text-xs font-bold truncate">الطاقة والفاتورة</span>
+          <button onclick="resetEnergy()" title="تصفير عداد الطاقة"
+            class="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 hover:bg-rose-900/70 text-gray-300 border border-gray-700 shrink-0">
+            <i class="fa-solid fa-rotate-left"></i>
+          </button>
+        </div>
+        <div class="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-0.5 my-1">
+          <span class="ltr flex items-baseline gap-1">
+            <span id="valKwh" class="text-lg sm:text-2xl font-black font-mono-num text-white">0.000</span>
+            <span class="text-[10px] sm:text-xs text-gray-400">kWh</span>
+          </span>
+          <span class="flex items-baseline gap-1">
+            <span id="valCost" class="text-base sm:text-xl font-black font-mono-num text-yellow-400">0.00</span>
+            <span class="text-[10px] sm:text-xs text-gray-400">ج.م</span>
+          </span>
+        </div>
+        <div class="flex justify-between text-[10px] text-gray-500 mt-1.5 pt-1.5 border-t border-gray-800/80">
+          <span class="ltr">1.25 EGP/kWh</span>
+          <button onclick="openAnalyticsModal()" class="text-cyan-400 hover:underline">تفاصيل ▾</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Master Controls & Voice Control Bar -->
+    <div class="glass-card rounded-2xl p-3.5 sm:p-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+      
+      <!-- Master ON / OFF Buttons -->
+      <div class="grid grid-cols-2 sm:flex items-center gap-2.5">
+        <button id="btnAllOn" onclick="sendMasterCommand(true)" class="flex items-center justify-center gap-2 px-3 sm:px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/25 transition active:scale-95">
+          <i id="iconAllOn" class="fa-solid fa-power-off"></i>
+          <span id="labelAllOn">تشغيل الكل</span>
+          <span class="ltr text-[10px] opacity-80 hidden sm:inline">(ALL ON)</span>
+        </button>
+        <button id="btnAllOff" onclick="sendMasterCommand(false)" class="flex items-center justify-center gap-2 px-3 sm:px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg shadow-rose-600/25 transition active:scale-95">
+          <i class="fa-solid fa-ban"></i>
+          <span>فصل الكل</span>
+          <span class="ltr text-[10px] opacity-80 hidden sm:inline">(ALL OFF)</span>
+        </button>
+      </div>
+
+      <!-- Advanced Continuous Voice Control -->
+      <div class="flex flex-col sm:flex-row sm:items-center gap-2 pt-2.5 lg:pt-0 border-t lg:border-t-0 border-gray-800/80">
+        <div class="flex items-center gap-1.5">
+          <button id="btnVoice" onclick="toggleVoice()"
+            class="flex-1 sm:flex-initial flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl bg-cyan-950/70 hover:bg-cyan-900/80 border border-cyan-600/70 text-cyan-200 text-xs font-bold transition active:scale-95">
+            <i id="voiceIcon" class="fa-solid fa-microphone text-sm"></i>
+            <span id="voiceStatus">تشغيل الأوامر الصوتية</span>
+          </button>
+          <button id="btnVoiceLang" onclick="toggleVoiceLang()" title="تبديل لغة الميكروفون (عربي / إنجليزي)"
+            class="px-3 py-2.5 rounded-xl bg-gray-900 hover:bg-gray-800 border border-gray-700 text-cyan-300 text-xs font-bold font-mono-num shrink-0">
+            عربي
+          </button>
+        </div>
+
+        <div id="voiceFeedback" class="text-[11px] px-3 py-2 rounded-xl bg-gray-950/90 border border-gray-800 text-gray-400 truncate max-w-full sm:max-w-md">
+          قل: "شغل الراوتر" أو "افصل الكل" أو "turn on 1"
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Outlets Grid (4 Sockets) -->
+    <div>
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-3">
+        <h2 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-sliders text-cyan-400"></i>
+          <span>المخارج الذكية الأربعة ومراقبة الأحمال</span>
+        </h2>
+        <span class="text-[11px] text-gray-400">تحكم فردي + جدولة ومؤقتات + نظام أولويات الأحمال (حد مستمر 7A/عين)</span>
+      </div>
+      <div id="outletsContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4"></div>
+    </div>
+
+    <!-- Power Chart & Live Event Logger -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5">
+      
+      <!-- Live Power Graph -->
+      <div class="lg:col-span-2 glass-card rounded-2xl p-4 min-w-0">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-bold text-white text-sm flex items-center gap-2">
+            <i class="fa-solid fa-chart-line text-cyan-400"></i>
+            <span>مخطط استهلاك القدرة اللحظي (واط)</span>
+          </h3>
+          <span class="text-[11px] text-gray-400">تحديث لحظي عبر WebSocket</span>
+        </div>
+        <div class="h-48 sm:h-52 w-full relative">
+          <canvas id="powerChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Live Event Logs Console -->
+      <div class="glass-card rounded-2xl p-4 flex flex-col justify-between min-w-0">
+        <div>
+          <div class="flex items-center justify-between mb-2.5">
+            <h3 class="font-bold text-white text-sm flex items-center gap-2">
+              <i class="fa-solid fa-terminal text-emerald-400"></i>
+              <span>سجل أحداث النظام</span>
+            </h3>
+            <button onclick="clearLogs()" class="text-[11px] text-gray-400 hover:text-white">مسح</button>
+          </div>
+          <div id="logConsole" class="bg-gray-950 rounded-xl p-3 h-44 overflow-y-auto text-[11px] text-gray-300 space-y-1.5 border border-gray-800">
+            <div class="text-cyan-400">&gt; جاري تهيئة لوحة التحكم ElectroNova v4.2 Unified...</div>
+          </div>
+        </div>
+        <div class="mt-2.5 pt-2 border-t border-gray-800 text-[11px] text-gray-500 flex justify-between items-center gap-2">
+          <span>MQTT Contract:</span>
+          <code id="lblTopicFooter" class="ltr text-cyan-400 font-mono text-[10px]">EMQX Cloud SSL (8883)</code>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ── Footer ── -->
+  <footer class="glass-card border-t border-gray-800/80 px-4 py-2.5 mt-4">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between text-[11px] sm:text-xs text-gray-400 gap-1 text-center">
+      <span>ElectroNova Team © 2026 • كلية الهندسة جامعة الأزهر</span>
+      <div class="flex items-center gap-3">
+        <a href="/api-docs" target="_blank" class="text-cyan-400 hover:underline">Swagger API Docs</a>
+        <span class="text-gray-600">•</span>
+        <span class="ltr text-[10px] text-gray-500">EMQX Cloud Unified + RCBO 30mA + MCB 16A</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ── Auth Modal ── -->
+  <div id="authModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-gray-800 pb-3">
+        <h3 class="font-bold text-white text-sm sm:text-base flex items-center gap-2">
+          <i class="fa-solid fa-shield-halved text-cyan-400"></i>
+          <span>تسجيل دخول لوحة التحكم</span>
+        </h3>
+        <button onclick="closeAuthModal()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+
+      <div id="authError" class="hidden p-2 rounded-lg bg-rose-950/80 border border-rose-700 text-rose-300 text-xs"></div>
+
+      <form onsubmit="handleLoginSubmit(event)" class="space-y-3 text-xs">
+        <div>
+          <label class="block text-gray-400 mb-1">البريد الإلكتروني:</label>
+          <input type="email" id="authEmail" value="admin@electronova.local" required
+            class="ltr w-full bg-gray-950 border border-gray-700 rounded-lg p-2 text-white font-mono">
+        </div>
+        <div>
+          <label class="block text-gray-400 mb-1">كلمة المرور:</label>
+          <input type="password" id="authPassword" value="123456" required
+            class="ltr w-full bg-gray-950 border border-gray-700 rounded-lg p-2 text-white font-mono">
+        </div>
+        <div class="text-[10px] text-gray-500">
+          حساب الأدمن التجريبي جاهز بالبيانات الافتراضية.
+        </div>
+        <div class="pt-2 flex justify-end gap-2">
+          <button type="button" onclick="closeAuthModal()" class="px-4 py-2 rounded-lg bg-gray-800 text-gray-300 text-xs">إلغاء</button>
+          <button type="submit" class="px-5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs transition">دخول</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Analytics & Energy Breakdown Modal ── -->
+  <div id="analyticsModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-gray-800 pb-3">
+        <h3 class="font-bold text-white text-sm sm:text-base flex items-center gap-2">
+          <i class="fa-solid fa-chart-pie text-yellow-400"></i>
+          <span>تحليلات الطاقة وفاتورة الكهرباء</span>
+        </h3>
+        <button onclick="closeAnalyticsModal()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+        <div class="bg-gray-950 p-2.5 rounded-xl border border-gray-800">
+          <div class="text-[10px] text-gray-400">أقصى قدرة مسجلة</div>
+          <div id="anPeakWatts" class="font-mono-num text-sm font-bold text-cyan-400 mt-1">-- W</div>
+        </div>
+        <div class="bg-gray-950 p-2.5 rounded-xl border border-gray-800">
+          <div class="text-[10px] text-gray-400">متوسط القدرة</div>
+          <div id="anAvgWatts" class="font-mono-num text-sm font-bold text-emerald-400 mt-1">-- W</div>
+        </div>
+        <div class="bg-gray-950 p-2.5 rounded-xl border border-gray-800">
+          <div class="text-[10px] text-gray-400">توقع شهري (kWh)</div>
+          <div id="anProjKwh" class="font-mono-num text-sm font-bold text-yellow-400 mt-1">--</div>
+        </div>
+        <div class="bg-gray-950 p-2.5 rounded-xl border border-gray-800">
+          <div class="text-[10px] text-gray-400">توقع الفاتورة</div>
+          <div id="anProjCost" class="font-mono-num text-sm font-bold text-rose-400 mt-1">-- ج.م</div>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-right text-xs">
+          <thead>
+            <tr class="text-gray-400 border-b border-gray-800 text-[10px]">
+              <th class="pb-2">المخرج</th>
+              <th class="pb-2">واط</th>
+              <th class="pb-2">كيلوواط/ساعة</th>
+              <th class="pb-2">التكلفة (ج.م)</th>
+              <th class="pb-2">النسبة</th>
+            </tr>
+          </thead>
+          <tbody id="anTableBody"></tbody>
+        </table>
+      </div>
+
+      <div class="pt-3 border-t border-gray-800 flex justify-end">
+        <button onclick="closeAnalyticsModal()" class="px-5 py-2 rounded-lg bg-gray-800 text-gray-200 text-xs font-bold hover:bg-gray-700 transition">إغلاق</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript Client Controller -->
+  <script src="/app.js"></script>
+</body>
+</html>

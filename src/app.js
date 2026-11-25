@@ -1,0 +1,60 @@
+const path = require('path');
+const express = require('express');
+const cors = require('cors');
+const rateLimit = require('express-rate-limit');
+const swaggerUi = require('swagger-ui-express');
+const swaggerDocument = require('./docs/swagger.json');
+const apiRoutes = require('./routes');
+const errorHandler = require('./middlewares/errorHandler');
+
+const app = express();
+
+// Trust reverse proxy headers (required for Render.com + express-rate-limit)
+app.set('trust proxy', 1);
+
+// Security & Middlewares
+app.use(cors({ origin: '*' }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Lightweight healthcheck for Render / uptime monitors
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'ElectroNova Full-Stack',
+    uptimeSec: Math.round(process.uptime()),
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Serve Static Frontend Assets
+app.use(express.static(path.join(__dirname, '../public')));
+
+// Interactive Swagger / OpenAPI 3.0 Documentation UI
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
+  customSiteTitle: 'ElectroNova API Documentation | Al-Azhar Engineering'
+}));
+
+// Rate limiter for API safety
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 mins
+  max: 1000,
+  message: { success: false, message: 'Too many requests, please try again later.' }
+});
+app.use('/api', limiter);
+
+// API Endpoints
+app.use('/api', apiRoutes);
+
+// Fallback to frontend index.html for client routes
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api') || req.path.startsWith('/api-docs')) {
+    return next();
+  }
+  res.sendFile(path.join(__dirname, '../public/index.html'));
+});
+
+// Error handling middleware
+app.use(errorHandler);
+
+module.exports = app;
