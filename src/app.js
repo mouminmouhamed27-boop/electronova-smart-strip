@@ -6,10 +6,11 @@ const swaggerUi = require('swagger-ui-express');
 const swaggerDocument = require('./docs/swagger.json');
 const apiRoutes = require('./routes');
 const errorHandler = require('./middlewares/errorHandler');
+const mqttService = require('./services/mqttService');
 
 const app = express();
 
-// Trust reverse proxy headers (required for Render.com + express-rate-limit)
+// Trust reverse proxy headers (required for Render.com / Railway + express-rate-limit)
 app.set('trust proxy', 1);
 
 // Security & Middlewares
@@ -17,11 +18,13 @@ app.use(cors({ origin: '*' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Lightweight healthcheck for Render / uptime monitors
+// Lightweight healthcheck for Railway / Render / uptime monitors
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'ok',
     service: 'ElectroNova Full-Stack',
+    mqttConnected: mqttService.isConnected,
+    deviceId: mqttService.deviceId,
     uptimeSec: Math.round(process.uptime()),
     timestamp: new Date().toISOString()
   });

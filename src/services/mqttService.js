@@ -48,7 +48,10 @@ class MqttService extends EventEmitter {
 
       this.client.on('error', (err) => {
         console.error(`⚠️ [MQTT Service] Error:`, err.message);
-        this.emit('error', err);
+        if (this.listenerCount('error') > 0) {
+          this.emit('error', err);
+        }
+        this.emit('mqtt_error', err);
       });
 
       this.client.on('close', () => {

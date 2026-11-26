@@ -39,6 +39,10 @@ mqttService.on('telemetry', (deviceState) => {
   });
 });
 
+mqttService.on('error', (err) => {
+  console.error('⚠️ [Server] Non-fatal MQTT error (server stays online):', err.message);
+});
+
 // Start Server, MQTT Connection & Cron Automation Engine
 server.listen(config.port, () => {
   console.log(`
