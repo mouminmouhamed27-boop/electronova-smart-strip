@@ -53,12 +53,15 @@
         "type": "object",
         "properties": {
           "temperatureC": { "type": "number", "example": 32.5 },
+          "volts": { "type": "number", "example": 220.0 },
           "totalAmps": { "type": "number", "example": 4.8 },
           "totalWatts": { "type": "integer", "example": 1050 },
           "totalKwh": { "type": "number", "example": 2.45 },
           "costEgp": { "type": "number", "example": 3.06 },
           "isOverheatLocked": { "type": "boolean", "example": false },
           "isOverloadBlocked": { "type": "boolean", "example": false },
+          "isContinuousWarning": { "type": "boolean", "example": false },
+          "isVoltageFault": { "type": "boolean", "example": false },
           "alert": { "type": "string", "example": "OK" }
         }
       }

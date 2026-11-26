@@ -2,12 +2,13 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const config = require('../config');
 const storage = require('../services/storageService');
+const { isValidEmail } = require('../utils/validators');
 
 exports.login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
 
-    if (!email || !password) {
+    if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
       return res.status(400).json({
         success: false,
         message: 'Please provide both email and password.'
@@ -54,16 +55,26 @@ exports.login = async (req, res, next) => {
 
 exports.register = async (req, res, next) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password } = req.body || {};
 
-    if (!name || !email || !password) {
+    if (typeof name !== 'string' || !name.trim() || !isValidEmail(email) || typeof password !== 'string') {
       return res.status(400).json({
         success: false,
-        message: 'Name, email, and password are required.'
+        message: 'Valid name, email, and password (at least 6 characters) are required.'
       });
     }
 
-    const existing = storage.findUserByEmail(email);
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters long.'
+      });
+    }
+
+    const cleanName = name.trim();
+    const cleanEmail = email.trim().toLowerCase();
+
+    const existing = storage.findUserByEmail(cleanEmail);
     if (existing) {
       return res.status(409).json({
         success: false,
@@ -76,8 +87,8 @@ exports.register = async (req, res, next) => {
 
     const newUser = storage.createUser({
       id: `usr_${Date.now()}`,
-      name,
-      email,
+      name: cleanName,
+      email: cleanEmail,
       passwordHash,
       role: 'member',
       createdAt: new Date().toISOString()

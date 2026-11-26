@@ -12,18 +12,44 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws/telemetry' });
 
 wss.on('connection', (ws) => {
+  ws.isAlive = true;
   console.log('🔗 [WebSocket] Client connected to live telemetry stream.');
 
+  ws.on('pong', () => {
+    ws.isAlive = true;
+  });
+
+  ws.on('error', (err) => {
+    console.warn('⚠️ [WebSocket] Client socket error:', err.message);
+  });
+
   // Send current state immediately on connect
-  ws.send(JSON.stringify({
-    type: 'init',
-    data: storage.getDeviceState()
-  }));
+  try {
+    ws.send(JSON.stringify({
+      type: 'init',
+      data: storage.getDeviceState()
+    }));
+  } catch (_) {}
 
   ws.on('close', () => {
     console.log('🔌 [WebSocket] Client disconnected.');
   });
 });
+
+// Keepalive heartbeat prevents reverse-proxy (Railway) idle WebSocket drops
+const wsHeartbeat = setInterval(() => {
+  wss.clients.forEach((client) => {
+    if (client.isAlive === false) {
+      return client.terminate();
+    }
+    client.isAlive = false;
+    try {
+      client.ping();
+    } catch (_) {}
+  });
+}, 25000);
+
+wss.on('close', () => clearInterval(wsHeartbeat));
 
 // Broadcast live telemetry updates received from MQTT to all connected WebSockets
 mqttService.on('telemetry', (deviceState) => {
@@ -34,7 +60,9 @@ mqttService.on('telemetry', (deviceState) => {
 
   wss.clients.forEach((client) => {
     if (client.readyState === 1) { // 1 = OPEN
-      client.send(payload);
+      try {
+        client.send(payload);
+      } catch (_) {}
     }
   });
 });
@@ -52,7 +80,7 @@ server.listen(config.port, () => {
 📡 HTTP API:        http://localhost:${config.port}/api
 📖 Swagger UI Docs: http://localhost:${config.port}/api-docs
 🌐 WebSocket Stream: ws://localhost:${config.port}/ws/telemetry
-⚙️ Environment:     ${config.nodeEnv}
+⚙️ Environment:     ${config.nodeEnv} (${config.timezone})
 🎓 Team:            Al-Azhar University Engineering
 ======================================================
   `);
@@ -63,3 +91,15 @@ server.listen(config.port, () => {
   // Start Cron Scheduler
   cronService.start();
 });
+
+function gracefulShutdown(signal) {
+  console.log(`🛑 [Server] Received ${signal}, shutting down cleanly...`);
+  clearInterval(wsHeartbeat);
+  cronService.stop();
+  mqttService.disconnect();
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 5000).unref();
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

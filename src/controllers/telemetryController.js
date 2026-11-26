@@ -10,6 +10,7 @@ exports.getLive = (req, res) => {
       name: dev.name,
       isOnline: dev.isOnline,
       lastHeartbeat: dev.lastHeartbeat,
+      tariffEgp: dev.tariffEgp,
       mqttConnected: mqtt.isConnected,
       topics: mqtt.topics,
       safety: dev.safety,
@@ -34,9 +35,10 @@ exports.getLogs = (req, res) => {
 
 exports.resetEnergy = (req, res, next) => {
   try {
-    mqtt.resetEnergy();
+    const result = mqtt.resetEnergy();
     res.json({
       success: true,
+      mqttDispatched: result.mqttDispatched,
       message: 'Cumulative energy (kWh) counter reset command dispatched.'
     });
   } catch (err) {
@@ -60,7 +62,7 @@ exports.requestSync = (req, res, next) => {
 
 exports.switchDevice = (req, res, next) => {
   try {
-    const { deviceId } = req.body;
+    const { deviceId } = req.body || {};
     if (!deviceId || typeof deviceId !== 'string' || !deviceId.trim()) {
       return res.status(400).json({ success: false, message: 'Valid "deviceId" (e.g., EN_SIM1 or EN_XXXX) is required.' });
     }

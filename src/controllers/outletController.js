@@ -1,5 +1,6 @@
 const storage = require('../services/storageService');
 const mqtt = require('../services/mqttService');
+const { parseBooleanStrict, parseOutletId } = require('../utils/validators');
 
 exports.getOutlets = (req, res) => {
   const dev = storage.getDeviceState();
@@ -12,26 +13,26 @@ exports.getOutlets = (req, res) => {
 
 exports.setOutlet = (req, res, next) => {
   try {
-    const outletId = parseInt(req.params.id, 10);
-    const { state } = req.body;
-
-    if (isNaN(outletId) || outletId < 1 || outletId > 4) {
+    const outletId = parseOutletId(req.params.id);
+    if (!outletId) {
       return res.status(400).json({ success: false, message: 'Invalid outlet ID (1-4).' });
     }
 
-    if (state === undefined) {
-      return res.status(400).json({ success: false, message: 'Missing "state" (boolean).' });
+    const parsedState = parseBooleanStrict(req.body?.state);
+    if (parsedState === null) {
+      return res.status(400).json({ success: false, message: 'Valid boolean "state" (true/false) is required.' });
     }
 
-    mqtt.setOutletState(outletId, Boolean(state));
+    const result = mqtt.setOutletState(outletId, parsedState);
 
     res.json({
       success: true,
-      message: `Outlet ${outletId} set to ${state ? 'ON' : 'OFF'}`,
+      mqttDispatched: result.mqttDispatched,
+      message: `Outlet ${outletId} set to ${parsedState ? 'ON' : 'OFF'}`,
       outlet: storage.getDeviceState().outlets.find(o => o.id === outletId)
     });
   } catch (err) {
-    res.status(403).json({
+    res.status(err.status || 403).json({
       success: false,
       message: err.message
     });
@@ -40,20 +41,21 @@ exports.setOutlet = (req, res, next) => {
 
 exports.setMasterAll = (req, res, next) => {
   try {
-    const { state } = req.body;
-    if (state === undefined) {
-      return res.status(400).json({ success: false, message: 'Missing "state" (boolean).' });
+    const parsedState = parseBooleanStrict(req.body?.state);
+    if (parsedState === null) {
+      return res.status(400).json({ success: false, message: 'Valid boolean "state" (true/false) is required.' });
     }
 
-    mqtt.setAllOutlets(Boolean(state));
+    const result = mqtt.setAllOutlets(parsedState);
 
     res.json({
       success: true,
-      message: `All outlets set to ${state ? 'ON' : 'OFF'}`,
+      mqttDispatched: result.mqttDispatched,
+      message: `All outlets set to ${parsedState ? 'ON' : 'OFF'}`,
       outlets: storage.getDeviceState().outlets
     });
   } catch (err) {
-    res.status(403).json({
+    res.status(err.status || 403).json({
       success: false,
       message: err.message
     });
@@ -62,24 +64,24 @@ exports.setMasterAll = (req, res, next) => {
 
 exports.setTimer = (req, res, next) => {
   try {
-    const outletId = parseInt(req.params.id, 10);
-    const { delaySec } = req.body;
-
-    if (isNaN(outletId) || outletId < 1 || outletId > 4) {
+    const outletId = parseOutletId(req.params.id);
+    if (!outletId) {
       return res.status(400).json({ success: false, message: 'Invalid outlet ID (1-4).' });
     }
 
-    if (!delaySec || delaySec <= 0) {
-      return res.status(400).json({ success: false, message: 'Valid "delaySec" is required.' });
+    const rawDelay = Number(req.body?.delaySec);
+    if (!Number.isInteger(rawDelay) || rawDelay <= 0 || rawDelay > 86400) {
+      return res.status(400).json({ success: false, message: 'Valid integer "delaySec" (1-86400) is required.' });
     }
 
-    mqtt.setTimer(outletId, delaySec);
+    const result = mqtt.setTimer(outletId, rawDelay);
 
     res.json({
       success: true,
-      message: `Countdown timer set for Outlet ${outletId}: ${delaySec} seconds`
+      mqttDispatched: result.mqttDispatched,
+      message: `Countdown timer set for Outlet ${outletId}: ${rawDelay} seconds`
     });
   } catch (err) {
-    res.status(403).json({ success: false, message: err.message });
+    res.status(err.status || 403).json({ success: false, message: err.message });
   }
 };

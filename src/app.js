@@ -15,8 +15,8 @@ app.set('trust proxy', 1);
 
 // Security & Middlewares
 app.use(cors({ origin: '*' }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '100kb' }));
+app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 
 // Lightweight healthcheck for Railway / Render / uptime monitors
 app.get('/health', (req, res) => {
@@ -48,6 +48,14 @@ app.use('/api', limiter);
 
 // API Endpoints
 app.use('/api', apiRoutes);
+
+// JSON 404 handler for unknown /api routes (instead of HTML fallback)
+app.use('/api', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `API endpoint not found: ${req.method} ${req.originalUrl}`
+  });
+});
 
 // Fallback to frontend index.html for client routes
 app.get('*', (req, res, next) => {

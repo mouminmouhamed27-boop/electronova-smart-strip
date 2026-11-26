@@ -4,7 +4,7 @@ const storage = require('../services/storageService');
 
 exports.processVoiceCommand = async (req, res, next) => {
   try {
-    const { transcript, language } = req.body;
+    const { transcript, language } = req.body || {};
 
     if (!transcript) {
       return res.status(400).json({
@@ -25,21 +25,21 @@ exports.processVoiceCommand = async (req, res, next) => {
     }
 
     // Execute the command via MQTT
-    let executed = false;
+    let commandResult = null;
     let executionError = null;
 
     try {
       if (parsed.type === 'all') {
-        executed = mqttService.setAllOutlets(parsed.state);
+        commandResult = mqttService.setAllOutlets(parsed.state);
       } else if (parsed.type === 'outlet') {
-        executed = mqttService.setOutletState(parsed.id, parsed.state);
+        commandResult = mqttService.setOutletState(parsed.id, parsed.state);
       }
     } catch (err) {
-      executed = false;
+      commandResult = null;
       executionError = err.message;
     }
 
-    if (!executed) {
+    if (!commandResult) {
       return res.status(403).json({
         success: false,
         message: executionError || 'Command blocked by safety engine (Overheat or Overload)!',
@@ -53,6 +53,7 @@ exports.processVoiceCommand = async (req, res, next) => {
 
     return res.json({
       success: true,
+      mqttDispatched: commandResult.mqttDispatched,
       message: feedback,
       feedbackSpeech: feedback,
       command: {

@@ -5,17 +5,17 @@
 class VoiceService {
   constructor() {
     this.arabicNumbers = {
-      'واحد': 1, 'واحده': 1, 'الاول': 1, 'الاولي': 1, '1': 1,
-      'اثنين': 2, 'اتنين': 2, 'الثاني': 2, 'التاني': 2, 'التانيه': 2, '2': 2,
-      'ثلاثة': 3, 'ثلاثه': 3, 'تلاتة': 3, 'تلاته': 3, 'الثالث': 3, 'التالت': 3, 'التالته': 3, '3': 3,
-      'اربعة': 4, 'اربعه': 4, 'الرابع': 4, 'الرابعه': 4, '4': 4
+      'واحد': 1, 'واحده': 1, 'الاول': 1, 'الاولي': 1, 'اول': 1, 'اولي': 1, '1': 1,
+      'اثنين': 2, 'اتنين': 2, 'الثاني': 2, 'الثانيه': 2, 'التاني': 2, 'التانيه': 2, 'تانيه': 2, 'ثانيه': 2, '2': 2,
+      'ثلاثة': 3, 'ثلاثه': 3, 'تلاتة': 3, 'تلاته': 3, 'الثالث': 3, 'الثالثه': 3, 'التالت': 3, 'التالته': 3, 'تالته': 3, 'ثالثه': 3, '3': 3,
+      'اربعة': 4, 'اربعه': 4, 'الرابع': 4, 'الرابعه': 4, 'رابعه': 4, '4': 4
     };
 
     this.outletAliases = {
-      'راوتر': 1, 'الراوتر': 1, 'نت': 1, 'النت': 1, 'router': 1,
-      'كمبيوتر': 2, 'الكمبيوتر': 2, 'بي سي': 2, 'pc': 2, 'computer': 2, 'شاشة': 2, 'الشاشة': 2, 'لابتوب': 2, 'laptop': 2,
-      'لمبة': 3, 'اللمبة': 3, 'نور': 3, 'النور': 3, 'اضاءة': 3, 'اضاءه': 3, 'light': 3, 'lamp': 3,
-      'شاحن': 4, 'الشاحن': 4, 'شواحن': 4, 'الشواحن': 4, 'charger': 4
+      'الراوتر': 1, 'راوتر': 1, 'النت': 1, 'نت': 1, 'انترنت': 1, 'router': 1,
+      'الكمبيوتر': 2, 'كمبيوتر': 2, 'بي سي': 2, 'pc': 2, 'computer': 2, 'الشاشه': 2, 'شاشه': 2, 'لابتوب': 2, 'laptop': 2,
+      'اللمبه': 3, 'لمبه': 3, 'النور': 3, 'نور': 3, 'الاضاءه': 3, 'اضاءه': 3, 'light': 3, 'lamp': 3,
+      'الشواحن': 4, 'شواحن': 4, 'الشاحن': 4, 'شاحن': 4, 'charger': 4
     };
   }
 
@@ -49,7 +49,7 @@ class VoiceService {
 
     // 1. Check Master Commands (All ON / All OFF)
     const isMasterOff =
-      /(?:فصل|افصل|اطفي|طفي|اقفل|بند|اغلق|سكر)\s+(?:الكل|كله|كلها|الجميع)/.test(cleanAr) ||
+      /(?:فصل|افصل|اطفي|طفي|اقفل|بند|اغلق|سكر)\s+(?:الكل|كله|كلها|الجميع|(?:كل|جميع)\s+\S+)/.test(cleanAr) ||
       /\b(all off|turn off all|shutdown all|power off all|turn everything off|lights off|all of|olaf|hall of|shutdown)\b/.test(cleanEn);
 
     if (isMasterOff) {
@@ -64,7 +64,7 @@ class VoiceService {
     }
 
     const isMasterOn =
-      /(?:شغل|افتح|ولع|نور)\s+(?:الكل|كله|كلها|الجميع)/.test(cleanAr) ||
+      /(?:شغل|افتح|ولع|نور)\s+(?:الكل|كله|كلها|الجميع|(?:كل|جميع)\s+\S+)/.test(cleanAr) ||
       /\b(all on|turn on all|power on all|turn everything on|lights on)\b/.test(cleanEn);
 
     if (isMasterOn) {
@@ -97,13 +97,14 @@ class VoiceService {
       };
     }
 
-    // 3. Find Outlet ID by number or alias
+    // 3. Find Outlet ID by word-bounded alias or number
     let outletId = null;
 
-    // By alias (normalized)
     for (const [alias, id] of Object.entries(this.outletAliases)) {
       const normAlias = this.normalizeArabic(alias);
-      if (cleanAr.includes(normAlias) || cleanEn.includes(alias)) {
+      const arWordRx = new RegExp(`(?:^|\\s)${normAlias}(?:\\s|$)`);
+      const enWordRx = new RegExp(`\\b${alias.replace(/\s+/g, '\\s+')}\\b`);
+      if (arWordRx.test(cleanAr) || enWordRx.test(cleanEn)) {
         outletId = id;
         break;
       }

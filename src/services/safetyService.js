@@ -18,15 +18,17 @@ class SafetyService {
     this.LOAD_SHED_THRESHOLD = 15.5;     // Amps threshold to initiate priority shedding
     this.MIN_SAFE_VOLTS = 190.0;         // Under-voltage threshold
     this.MAX_SAFE_VOLTS = 250.0;         // Over-voltage threshold
+    this.isRestoring = false;
   }
 
   evaluateTelemetry(payload, mqttService) {
     const dev = storage.getDeviceState();
+    const currentAlert = String(dev.safety.alert || 'OK');
 
-    // 1. Evaluate Temperature
+    // 1. Evaluate Temperature (trip >= 65°C, hysteresis release < 60°C)
     const temp = dev.safety.temperatureC;
     if (temp >= this.OVERHEAT_TRIP_TEMP) {
-      if (!dev.safety.isOverheatLocked || dev.safety.alert === 'OK') {
+      if (!dev.safety.isOverheatLocked || currentAlert === 'OK') {
         dev.safety.isOverheatLocked = true;
         dev.safety.alert = 'OVERHEAT';
 
@@ -44,7 +46,7 @@ class SafetyService {
     } else if (temp < this.OVERHEAT_RESET_TEMP && dev.safety.isOverheatLocked) {
       // Hysteresis release: Cool-down threshold achieved
       dev.safety.isOverheatLocked = false;
-      if (dev.safety.alert === 'OVERHEAT' || dev.safety.alert === 'OVERHEAT_SHUTDOWN') {
+      if (currentAlert === 'OVERHEAT' || currentAlert === 'OVERHEAT_SHUTDOWN') {
         dev.safety.alert = 'OK';
       }
       console.log(`✅ [Safety Engine] Temperature cooled to ${temp}°C (< ${this.OVERHEAT_RESET_TEMP}°C). Safety lock released.`);
@@ -53,11 +55,15 @@ class SafetyService {
         action: 'overheat_lock_released',
         details: { temperature: temp }
       });
+    } else if (dev.safety.isOverheatLocked) {
+      // Preserve overheat alert inside hysteresis zone (60°C..65°C)
+      dev.safety.alert = 'OVERHEAT';
     }
 
     // 2. Evaluate Total Current & Priority Load Shedding
     const totalAmps = dev.safety.totalAmps;
     dev.safety.isContinuousWarning = totalAmps >= this.SAFE_CONTINUOUS_AMPS;
+    const latestAlert = String(dev.safety.alert || 'OK');
 
     if (totalAmps >= this.LOAD_SHED_THRESHOLD && !dev.safety.isOverheatLocked) {
       console.warn(`⚡ [Safety Engine] Total Current ${totalAmps}A approaching rated limit (${this.MAX_RATED_AMPS}A)! Evaluating Load Shedding...`);
@@ -88,16 +94,21 @@ class SafetyService {
             alert: 'OVERLOAD'
           }
         });
+      } else if (totalAmps > this.MAX_RATED_AMPS) {
+        // Even if only Priority 1 critical load remains, block further turn-ons above rated 16A
+        dev.safety.alert = 'OVERLOAD';
+        dev.safety.isOverloadBlocked = true;
       }
-    } else if (totalAmps < this.LOAD_SHED_THRESHOLD && !dev.safety.isOverheatLocked && (dev.safety.alert === 'OVERLOAD' || dev.safety.alert.startsWith('LOAD_SHEDDING'))) {
+    } else if (totalAmps < this.LOAD_SHED_THRESHOLD && !dev.safety.isOverheatLocked && (latestAlert === 'OVERLOAD' || latestAlert.startsWith('LOAD_SHEDDING'))) {
       dev.safety.isOverloadBlocked = false;
       dev.safety.alert = 'OK';
     }
 
-    // 3. Evaluate Over/Under Voltage Warning
-    const volts = dev.safety.volts || 220.0;
+    // 3. Evaluate Over/Under Voltage Warning (preserve explicit 0V reading)
+    const volts = typeof dev.safety.volts === 'number' && Number.isFinite(dev.safety.volts) ? dev.safety.volts : 220.0;
     dev.safety.isVoltageFault = volts < this.MIN_SAFE_VOLTS || volts > this.MAX_SAFE_VOLTS;
 
+    storage.syncLatestHistoryAlert(dev.safety.alert);
     storage.saveData();
     return dev.safety;
   }
@@ -106,30 +117,40 @@ class SafetyService {
    * Staggered Power Restore (Prevents inrush current tripping the home breaker)
    */
   async sequentialPowerRestore(mqttService, delayMs = 3000) {
+    if (this.isRestoring) {
+      return false;
+    }
+    this.isRestoring = true;
     const dev = storage.getDeviceState();
     console.log(`🔄 [Safety Engine] Starting Sequential Staggered Power Restore (${delayMs}ms delay between outlets)...`);
 
-    for (let i = 0; i < dev.outlets.length; i++) {
-      const outlet = dev.outlets[i];
-      if (dev.safety.isOverheatLocked || dev.safety.isOverloadBlocked) {
-        console.warn(`🚫 [Safety Engine] Aborting sequential restore: Safety lock active!`);
-        break;
+    try {
+      for (let i = 0; i < dev.outlets.length; i++) {
+        const outlet = dev.outlets[i];
+        if (dev.safety.isOverheatLocked || dev.safety.isOverloadBlocked) {
+          console.warn(`🚫 [Safety Engine] Aborting sequential restore: Safety lock active!`);
+          break;
+        }
+
+        console.log(`🔌 [Safety Engine] Activating Outlet ${outlet.id} (${outlet.name})...`);
+        mqttService.publishCommand({ type: 'outlet', id: outlet.id, state: true });
+        storage.updateOutletState(outlet.id, true);
+        mqttService.emit('telemetry', storage.getDeviceState());
+
+        if (i < dev.outlets.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
       }
 
-      console.log(`🔌 [Safety Engine] Activating Outlet ${outlet.id} (${outlet.name})...`);
-      mqttService.publishCommand({ type: 'outlet', id: outlet.id, state: true });
-      storage.updateOutletState(outlet.id, true);
-
-      if (i < dev.outlets.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-      }
+      storage.logEvent({
+        source: 'safety_engine',
+        action: 'sequential_restore_complete',
+        details: 'All outlets restored sequentially'
+      });
+    } finally {
+      this.isRestoring = false;
     }
-
-    storage.logEvent({
-      source: 'safety_engine',
-      action: 'sequential_restore_complete',
-      details: 'All outlets restored sequentially'
-    });
+    return true;
   }
 }
 

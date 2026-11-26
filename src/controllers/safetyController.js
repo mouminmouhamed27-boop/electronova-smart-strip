@@ -44,6 +44,7 @@ exports.unlockSafety = (req, res, next) => {
       action: 'safety_unlocked',
       details: 'Admin manual safety lock reset'
     });
+    mqttService.emit('telemetry', dev);
 
     return res.json({
       success: true,
@@ -57,8 +58,23 @@ exports.unlockSafety = (req, res, next) => {
 
 exports.sequentialRestore = async (req, res, next) => {
   try {
-    const delayMs = parseInt(req.body.delayMs || '3000', 10);
-    // Trigger in background without blocking response
+    const dev = storage.getDeviceState();
+    if (dev.safety.isOverheatLocked || dev.safety.isOverloadBlocked) {
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot initiate sequential restore while a safety lock (Overheat or Overload) is active.'
+      });
+    }
+    if (safetyService.isRestoring) {
+      return res.status(409).json({
+        success: false,
+        message: 'Sequential power restore is already in progress.'
+      });
+    }
+
+    const parsedDelay = parseInt(req.body?.delayMs, 10);
+    const delayMs = Number.isFinite(parsedDelay) ? Math.min(15000, Math.max(500, parsedDelay)) : 3000;
+    // Trigger in background without blocking HTTP response
     safetyService.sequentialPowerRestore(mqttService, delayMs);
 
     return res.json({

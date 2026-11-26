@@ -83,7 +83,11 @@ class MqttService extends EventEmitter {
 
   switchDeviceId(newDeviceId) {
     const cleanId = String(newDeviceId || '').trim();
-    if (!cleanId) throw new Error('Device ID cannot be empty.');
+    if (!cleanId || !/^[A-Za-z0-9_-]{1,64}$/.test(cleanId)) {
+      const err = new Error('Invalid Device ID. Use 1-64 alphanumeric characters, "_" or "-".');
+      err.status = 400;
+      throw err;
+    }
 
     const oldTopics = [this.topics.state, this.topics.lwt];
     this.deviceId = cleanId;
@@ -160,14 +164,20 @@ class MqttService extends EventEmitter {
     }
   }
 
+  _createSafetyError(message) {
+    const err = new Error(message);
+    err.status = 403;
+    return err;
+  }
+
   // --- Device Safety Protected Actions (Unified Mohamed Ayman Contract Format) ---
   setOutletState(outletId, state) {
     const dev = storage.getDeviceState();
     if (state && dev.safety.isOverheatLocked) {
-      throw new Error(`🚫 Action rejected: Overheat lock is active (>65°C)!`);
+      throw this._createSafetyError(`🚫 Action rejected: Overheat lock is active (>65°C)!`);
     }
     if (state && dev.safety.isOverloadBlocked) {
-      throw new Error(`⚡ Action rejected: Overload limit reached (>16A)!`);
+      throw this._createSafetyError(`⚡ Action rejected: Overload limit reached (>16A)!`);
     }
 
     const ok = this.publishCommand({ type: 'outlet', id: outletId, state: Boolean(state) });
@@ -175,18 +185,19 @@ class MqttService extends EventEmitter {
     storage.logEvent({
       source: 'api_backend',
       action: `outlet_${state ? 'on' : 'off'}`,
-      details: { outletId, state, mqttDispatched: ok }
+      details: { outletId, state: Boolean(state), mqttDispatched: ok }
     });
-    return true;
+    this.emit('telemetry', storage.getDeviceState());
+    return { ok: true, mqttDispatched: ok };
   }
 
   setAllOutlets(state) {
     const dev = storage.getDeviceState();
     if (state && dev.safety.isOverheatLocked) {
-      throw new Error(`🚫 Action rejected: Overheat lock is active (>65°C)!`);
+      throw this._createSafetyError(`🚫 Action rejected: Overheat lock is active (>65°C)!`);
     }
     if (state && dev.safety.isOverloadBlocked) {
-      throw new Error(`⚡ Action rejected: Overload limit reached (>16A)!`);
+      throw this._createSafetyError(`⚡ Action rejected: Overload limit reached (>16A)!`);
     }
 
     const ok = this.publishCommand({ type: 'all', state: Boolean(state) });
@@ -194,9 +205,10 @@ class MqttService extends EventEmitter {
     storage.logEvent({
       source: 'api_backend',
       action: `master_${state ? 'on' : 'off'}`,
-      details: { state, mqttDispatched: ok }
+      details: { state: Boolean(state), mqttDispatched: ok }
     });
-    return true;
+    this.emit('telemetry', storage.getDeviceState());
+    return { ok: true, mqttDispatched: ok };
   }
 
   setSchedule(outletId, enabled, onTime, offTime) {
@@ -213,7 +225,8 @@ class MqttService extends EventEmitter {
       action: 'schedule_update',
       details: { outletId, enabled: Boolean(enabled), onTime, offTime, mqttDispatched: ok }
     });
-    return true;
+    this.emit('telemetry', storage.getDeviceState());
+    return { ok: true, mqttDispatched: ok };
   }
 
   setTimer(outletId, delaySec) {
@@ -222,25 +235,26 @@ class MqttService extends EventEmitter {
     const targetState = outlet ? !outlet.state : false;
 
     if (targetState && dev.safety.isOverheatLocked) {
-      throw new Error(`🚫 Cannot schedule ON timer during Overheat safety lock!`);
+      throw this._createSafetyError(`🚫 Cannot schedule ON timer during Overheat safety lock!`);
     }
     if (targetState && dev.safety.isOverloadBlocked) {
-      throw new Error(`⚡ Cannot schedule ON timer during Overload limit (>16A)!`);
+      throw this._createSafetyError(`⚡ Cannot schedule ON timer during Overload limit (>16A)!`);
     }
 
+    const parsedSec = parseInt(delaySec, 10);
     const ok = this.publishCommand({
       type: 'timer',
       id: outletId,
       state: targetState,
-      delaySec: parseInt(delaySec, 10)
+      delaySec: parsedSec
     });
 
     storage.logEvent({
       source: 'api_backend',
       action: 'timer_set',
-      details: { outletId, delaySec: parseInt(delaySec, 10), targetState, mqttDispatched: ok }
+      details: { outletId, delaySec: parsedSec, targetState, mqttDispatched: ok }
     });
-    return true;
+    return { ok: true, mqttDispatched: ok };
   }
 
   resetEnergy() {
@@ -251,7 +265,16 @@ class MqttService extends EventEmitter {
       action: 'reset_energy',
       details: { message: 'Energy kWh counter reset', mqttDispatched: ok }
     });
-    return true;
+    this.emit('telemetry', storage.getDeviceState());
+    return { ok: true, mqttDispatched: ok };
+  }
+
+  disconnect() {
+    if (this.client) {
+      try {
+        this.client.end(true);
+      } catch (_) {}
+    }
   }
 }
 

@@ -17,7 +17,7 @@ class AnalyticsService {
     const perOutletBreakdown = dev.outlets.map(o => {
       const kwh = o.totalKwh || 0.0;
       const cost = (kwh * tariff).toFixed(2);
-      const sharePct = totalKwh > 0 ? ((kwh / totalKwh) * 100).toFixed(1) : '25.0';
+      const sharePct = totalKwh > 0 ? ((kwh / totalKwh) * 100).toFixed(1) : '0.0';
 
       return {
         id: o.id,
