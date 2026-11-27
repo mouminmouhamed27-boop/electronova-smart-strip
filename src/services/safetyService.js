@@ -127,6 +127,10 @@ class SafetyService {
     try {
       for (let i = 0; i < dev.outlets.length; i++) {
         const outlet = dev.outlets[i];
+        if (!mqttService.isConnected || !dev.isOnline) {
+          console.warn(`🚫 [Safety Engine] Aborting sequential restore: ESP32 went offline!`);
+          break;
+        }
         if (dev.safety.isOverheatLocked || dev.safety.isOverloadBlocked) {
           console.warn(`🚫 [Safety Engine] Aborting sequential restore: Safety lock active!`);
           break;

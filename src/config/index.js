@@ -12,12 +12,21 @@ function buildTopics(deviceId, useEnvOverrides = false) {
 
 const initialTopics = buildTopics(defaultDeviceId, true);
 
+const publicDomain = process.env.RAILWAY_PUBLIC_DOMAIN
+  ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/health`
+  : '';
+
 module.exports = {
   port: process.env.PORT || 5000,
   nodeEnv: process.env.NODE_ENV || 'development',
   timezone: process.env.TZ || process.env.APP_TIMEZONE || 'Africa/Cairo',
   jwtSecret: process.env.JWT_SECRET || 'dev_secret_key_123',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  keepAlive: {
+    enabled: process.env.KEEPALIVE_ENABLED !== 'false',
+    url: process.env.KEEPALIVE_URL || publicDomain || '',
+    intervalMs: Math.max(60000, parseInt(process.env.KEEPALIVE_INTERVAL_MS || '300000', 10) || 300000)
+  },
   mqtt: {
     brokerUrl: process.env.MQTT_BROKER_URL || 'mqtts://geeae33e.ala.eu-central-1.emqxsl.com:8883',
     clientId: process.env.MQTT_CLIENT_ID || `ElectroNova_Backend_${Math.random().toString(16).slice(2, 8)}`,

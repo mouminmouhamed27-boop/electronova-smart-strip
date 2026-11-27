@@ -75,9 +75,10 @@ class StorageService {
       if (fs.existsSync(DATA_FILE)) {
         const raw = fs.readFileSync(DATA_FILE, 'utf-8');
         const parsed = JSON.parse(raw);
-        // Ensure newer schema fields exist and configured tariff stays synced
+        // Always start offline on boot until live ESP32/LWT confirms connection
         if (parsed.device) {
           parsed.device.id = parsed.device.id || config.mqtt.deviceId || 'EN_SIM1';
+          parsed.device.isOnline = false;
           parsed.device.tariffEgp = config.defaultTariffEgp || parsed.device.tariffEgp || 1.25;
           if (parsed.device.safety) {
             if (parsed.device.safety.volts === undefined) parsed.device.safety.volts = 220.0;
@@ -181,12 +182,14 @@ class StorageService {
   }
 
   // --- Telemetry Processing (Supports Unified Contract + Legacy v4.0/v4.1 Payloads) ---
-  recordTelemetry(payload) {
+  recordTelemetry(payload, { retained = false } = {}) {
     const dev = this.data.device;
     const nowMs = Date.now();
     const prevOverheatLocked = Boolean(dev.safety.isOverheatLocked);
-    dev.isOnline = true;
-    dev.lastHeartbeat = new Date(nowMs).toISOString();
+    if (!retained) {
+      dev.isOnline = true;
+      dev.lastHeartbeat = new Date(nowMs).toISOString();
+    }
 
     // 1. Temperature (Unified: temp | Legacy: t, temp_c)
     const tempVal = toFiniteNumber(

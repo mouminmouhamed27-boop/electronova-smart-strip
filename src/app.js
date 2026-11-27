@@ -7,6 +7,7 @@ const swaggerDocument = require('./docs/swagger.json');
 const apiRoutes = require('./routes');
 const errorHandler = require('./middlewares/errorHandler');
 const mqttService = require('./services/mqttService');
+const keepAliveService = require('./services/keepAliveService');
 
 const app = express();
 
@@ -18,7 +19,7 @@ app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 
-// Lightweight healthcheck for Railway / Render / uptime monitors
+// Lightweight healthcheck for Railway / cron-job.org / UptimeRobot monitors
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'ok',
@@ -26,6 +27,7 @@ app.get('/health', (req, res) => {
     mqttConnected: mqttService.isConnected,
     deviceId: mqttService.deviceId,
     uptimeSec: Math.round(process.uptime()),
+    keepAlive: keepAliveService.getStatus(),
     timestamp: new Date().toISOString()
   });
 });

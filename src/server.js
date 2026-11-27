@@ -5,6 +5,7 @@ const config = require('./config');
 const mqttService = require('./services/mqttService');
 const storage = require('./services/storageService');
 const cronService = require('./services/cronService');
+const keepAliveService = require('./services/keepAliveService');
 
 const server = http.createServer(app);
 
@@ -17,6 +18,16 @@ wss.on('connection', (ws) => {
 
   ws.on('pong', () => {
     ws.isAlive = true;
+  });
+
+  ws.on('message', (raw) => {
+    try {
+      const msg = JSON.parse(raw.toString());
+      if (msg && msg.type === 'ping') {
+        ws.isAlive = true;
+        ws.send(JSON.stringify({ type: 'pong', ts: Date.now() }));
+      }
+    } catch (_) {}
   });
 
   ws.on('error', (err) => {
@@ -90,11 +101,15 @@ server.listen(config.port, () => {
 
   // Start Cron Scheduler
   cronService.start();
+
+  // Start HTTP Self Keep-Alive Monitor
+  keepAliveService.start();
 });
 
 function gracefulShutdown(signal) {
   console.log(`🛑 [Server] Received ${signal}, shutting down cleanly...`);
   clearInterval(wsHeartbeat);
+  keepAliveService.stop();
   cronService.stop();
   mqttService.disconnect();
   server.close(() => process.exit(0));

@@ -1,410 +1,612 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <title>ElectroNova Cloud Dashboard | المشترك الذكي</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#07101f" id="metaThemeColor">
+  <title>ElectroNova | لوحة تحكم المشترك الذكي</title>
 
-  <!-- Tailwind CSS & FontAwesome -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Fonts: Cairo (UI) & Space Grotesk (Numbers) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
 
-  <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="/style.css">
+  <!-- Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+
+  <!-- Modular Pure CSS -->
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/components.css">
 </head>
-<body class="min-h-screen flex flex-col justify-between overflow-x-hidden">
+<body>
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
-  <!-- ── Header ── -->
-  <header class="glass-card md:sticky md:top-0 z-40 px-3 sm:px-6 lg:px-8 py-3 border-b border-gray-800/80">
-    <div class="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-      
-      <!-- Brand & Title -->
-      <div class="flex items-center justify-between gap-2">
-        <div class="flex items-center gap-2.5 min-w-0">
-          <div class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 rounded-xl bg-gradient-to-tr from-cyan-500 to-emerald-500 flex items-center justify-center text-white shadow-lg shadow-cyan-500/25">
-            <i class="fa-solid fa-bolt text-lg sm:text-xl"></i>
+  <div class="app-shell">
+    <!-- ── Sticky Topbar ── -->
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <div class="brand-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/>
+            </svg>
           </div>
-          <div class="min-w-0">
-            <div class="flex items-center gap-2">
-              <h1 class="text-lg sm:text-xl font-black tracking-wide text-white truncate">ElectroNova</h1>
-              <span class="ltr text-[10px] sm:text-[11px] bg-emerald-950/80 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded-full font-mono-num shrink-0">v4.2 Unified</span>
+          <div class="brand-meta">
+            <div class="brand-title-row">
+              <h1 class="brand-title">ElectroNova</h1>
+              <span class="badge badge-p1 num" id="activeTransportBadge">Backend</span>
             </div>
-            <p class="text-[11px] text-gray-400 truncate">المشترك الكهربائي الذكي • هندسة الأزهر</p>
+            <p class="brand-sub">المشترك الكهربائي الذكي • هندسة الأزهر</p>
           </div>
         </div>
 
-        <!-- Mobile Controls Toggle -->
-        <div class="flex md:hidden items-center gap-1.5">
-          <button onclick="openAnalyticsModal()" title="تحليلات الطاقة" class="p-2 rounded-lg bg-gray-800 text-yellow-400">
-            <i class="fa-solid fa-chart-pie"></i>
+        <div class="topbar-status">
+          <!-- ESP Clock / NTP -->
+          <div class="chip" title="ساعة المشترك (بتوقيت القاهرة)">
+            <i class="fa-regular fa-clock"></i>
+            <span id="espClock" class="num">--:--:--</span>
+            <span id="ntpBadge" class="badge badge-p1 num">NTP</span>
+          </div>
+
+          <!-- Device ID Chip -->
+          <button id="btnDeviceSwitch" class="chip chip-accent" title="تبديل معرف الجهاز (Device ID)" aria-label="تبديل معرف الجهاز">
+            <i class="fa-solid fa-microchip"></i>
+            <span id="activeDeviceId" class="num">EN_SIM1</span>
           </button>
-          <a href="/api-docs" target="_blank" title="توثيق الـ API" class="p-2 rounded-lg bg-gray-800 text-cyan-400">
-            <i class="fa-solid fa-book"></i>
-          </a>
-          <button id="btnAuthMobile" onclick="openAuthModal()" class="p-2 rounded-lg bg-gray-800 text-gray-300">
+
+          <!-- ESP32 Status Chip (Click to Sync) -->
+          <button id="espChip" class="chip" title="اضغط لمزامنة الحالة الفورية من الـ ESP32" aria-label="حالة المشترك ومزامنة فورية">
+            <span class="dot"></span>
+            <span id="espStatusText">ESP32: انتظار</span>
+          </button>
+
+          <!-- Cloud / Transport Chip (Click to Reconnect) -->
+          <button id="cloudChip" class="chip chip-warn" title="اضغط لإعادة الاتصال" aria-label="حالة الاتصال بالسحابة">
+            <span class="dot"></span>
+            <span id="cloudStatusText">السحابة: اتصال...</span>
+          </button>
+
+          <!-- Theme Switcher Button -->
+          <button id="btnThemeTopbar" class="chip chip-icon" title="تبديل المظهر (داكن / فاتح)" aria-label="تبديل المظهر داكن وفاتح">
+            <i id="iconThemeTopbar" class="fa-solid fa-sun"></i>
+          </button>
+
+          <!-- Auth Button -->
+          <button id="btnAuthTopbar" class="chip" aria-label="الحساب وتسجيل الدخول">
             <i class="fa-solid fa-user-lock"></i>
+            <span id="authLabelTopbar">دخول</span>
           </button>
         </div>
       </div>
+    </header>
 
-      <!-- Status & Actions Bar -->
-      <div class="flex items-center flex-wrap gap-1.5 sm:gap-2">
-        
-        <!-- Live Clock -->
-        <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-900/90 border border-gray-700/80 text-[11px] sm:text-xs">
-          <i class="fa-regular fa-clock text-cyan-400"></i>
-          <span id="espClock" class="font-mono-num text-white font-bold">--:--:--</span>
-          <span class="ltr text-[9px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono-num">UTC+2</span>
-        </div>
-
-        <!-- Active Device ID Switcher -->
-        <button onclick="promptSwitchDevice()" title="تغيير Device ID (مثلاً EN_SIM1 أو EN_XXXX)"
-          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-900/90 border border-cyan-800/60 text-cyan-300 hover:border-cyan-500 text-[11px] sm:text-xs font-mono-num transition">
-          <i class="fa-solid fa-microchip text-cyan-400"></i>
-          <span id="activeDeviceId" class="ltr">EN_SIM1</span>
-        </button>
-
-        <!-- ESP32 Status Badge (Click to Sync) -->
-        <button id="espBadge" onclick="requestSync()" title="اضغط لطلب مزامنة فورية من الـ ESP32"
-          class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-800/90 border border-gray-700 text-gray-400 text-[11px] sm:text-xs font-semibold cursor-pointer transition hover:scale-105">
-          <span id="espDot" class="w-2 h-2 rounded-full bg-gray-500"></span>
-          <span id="espText">ESP32: انتظار</span>
-        </button>
-
-        <!-- Cloud WebSocket Badge -->
-        <div id="connBadge" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-yellow-950/60 border border-yellow-700/50 text-yellow-400 text-[11px] sm:text-xs font-semibold">
-          <span id="connDot" class="w-2 h-2 rounded-full bg-yellow-400 animate-ping"></span>
-          <span id="connText">السحابة: اتصال...</span>
-        </div>
-
-        <!-- Analytics & Billing Button -->
-        <button onclick="openAnalyticsModal()" title="تحليلات الفاتورة واستهلاك الطاقة"
-          class="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-lg bg-yellow-950/60 border border-yellow-700/60 text-yellow-300 hover:bg-yellow-900/60 text-xs font-bold transition">
-          <i class="fa-solid fa-chart-pie"></i>
-          <span>الفاتورة</span>
-        </button>
-
-        <!-- Swagger Docs Link -->
-        <a href="/api-docs" target="_blank" title="فتح توثيق Swagger التفاعلي"
-          class="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-lg bg-cyan-950/60 border border-cyan-700/60 text-cyan-300 hover:bg-cyan-900/60 text-xs font-bold transition">
-          <i class="fa-solid fa-book-bookmark"></i>
-          <span class="ltr">API Docs</span>
-        </a>
-
-        <!-- User Profile / Login -->
-        <div id="userBadge" class="hidden items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-950/60 border border-purple-700/60 text-purple-300 text-xs font-bold">
-          <i class="fa-solid fa-user-circle"></i>
-          <span id="userName">مهندس</span>
-        </div>
-        <button id="btnAuth" onclick="openAuthModal()"
-          class="hidden md:flex items-center gap-1 px-3 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 text-xs font-bold transition">
-          <i class="fa-solid fa-user-lock"></i>
-          <span>تسجيل دخول</span>
-        </button>
+    <!-- ── Sticky Emergency Safety Banner ── -->
+    <div id="alertBanner" class="alert-banner hidden" role="alert" aria-live="polite">
+      <div class="section-title">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span id="alertBannerMsg">تحذير أمان</span>
       </div>
+      <div id="alertBannerActions" class="alert-actions">
+        <button id="btnSafetyUnlock" class="btn-banner">فك القفل يدوياً</button>
+        <button id="btnSequentialRestore" class="btn-banner">تشغيل متسلسل (3ث)</button>
+      </div>
+    </div>
 
-    </div>
-  </header>
+    <!-- ── Main Workspace ── -->
+    <div class="workspace">
+      <!-- Navigation (Bottom Bar on Mobile / Side Rail on Desktop >=900px) -->
+      <nav class="app-nav" aria-label="التنقل الرئيسي">
+        <a href="#home" class="nav-item active" data-route="home" aria-label="الشاشة الرئيسية">
+          <i class="fa-solid fa-house"></i>
+          <span>الرئيسية</span>
+        </a>
+        <a href="#outlets" class="nav-item" data-route="outlets" aria-label="المخارج الذكية">
+          <i class="fa-solid fa-plug-circle-bolt"></i>
+          <span>المخارج</span>
+        </a>
+        <a href="#energy" class="nav-item" data-route="energy" aria-label="تحليلات الطاقة">
+          <i class="fa-solid fa-chart-pie"></i>
+          <span>الطاقة</span>
+        </a>
+        <a href="#settings" class="nav-item" data-route="settings" aria-label="الإعدادات">
+          <i class="fa-solid fa-gear"></i>
+          <span>الإعدادات</span>
+        </a>
+      </nav>
 
-  <!-- ── Emergency Safety Alert Banner ── -->
-  <div id="alertBanner" class="hidden px-4 py-2.5 bg-rose-600/95 text-white font-bold text-xs sm:text-sm text-center flex flex-wrap items-center justify-center gap-3 shadow-lg neon-red">
-    <div class="flex items-center gap-2">
-      <i class="fa-solid fa-triangle-exclamation text-base animate-bounce"></i>
-      <span id="alertMsg">تحذير أمان عاجل!</span>
+      <!-- Main Screen Outlet -->
+      <main class="main-content">
+
+        <!-- ══════════ SCREEN 1: HOME ══════════ -->
+        <section id="screen-home" class="screen active" aria-labelledby="title-home">
+          <h2 id="title-home" class="sr-only">لوحة التحكم الرئيسية</h2>
+
+          <!-- 4 KPI Cards -->
+          <div class="kpi-grid">
+            <!-- Temp KPI + Ring Gauge -->
+            <article class="card kpi-card">
+              <div class="kpi-head">
+                <span>درجة الحرارة</span>
+                <span class="num">DS18B20</span>
+              </div>
+              <div class="kpi-body">
+                <div class="kpi-val-wrap num">
+                  <span id="kpiTemp" class="kpi-val">--.-</span>
+                  <span class="kpi-unit">°C</span>
+                </div>
+                <svg class="ring-gauge" viewBox="0 0 60 60" aria-hidden="true">
+                  <circle class="ring-bg" cx="30" cy="30" r="24"/>
+                  <circle id="ringTemp" class="ring-fg" cx="30" cy="30" r="24" stroke-dasharray="150.8" stroke-dashoffset="150.8"/>
+                </svg>
+              </div>
+              <div class="bar-track"><div id="barTemp" class="bar-fill"></div></div>
+              <div class="kpi-foot">
+                <span>آمن &lt;60°</span>
+                <span style="color:var(--danger)">إيقاف &gt;65°</span>
+              </div>
+            </article>
+
+            <!-- Total Current KPI -->
+            <article class="card kpi-card">
+              <div class="kpi-head">
+                <span>التيار الكلي</span>
+                <i class="fa-solid fa-bolt" style="color:var(--accent)"></i>
+              </div>
+              <div class="kpi-body">
+                <div class="kpi-val-wrap num">
+                  <span id="kpiAmps" class="kpi-val">0.0</span>
+                  <span class="kpi-unit">/ 16A</span>
+                </div>
+              </div>
+              <div class="bar-track"><div id="barAmps" class="bar-fill"></div></div>
+              <div class="kpi-foot">
+                <span>مستمر آمن <span class="num">12.8A</span></span>
+                <span style="color:var(--danger)">حماية <span class="num">&gt;16A</span></span>
+              </div>
+            </article>
+
+            <!-- Power Watts & Voltage KPI -->
+            <article class="card kpi-card">
+              <div class="kpi-head">
+                <span>القدرة اللحظية</span>
+                <i class="fa-solid fa-gauge-high" style="color:var(--accent-2)"></i>
+              </div>
+              <div class="kpi-body">
+                <div class="kpi-val-wrap num">
+                  <span id="kpiWatts" class="kpi-val">0</span>
+                  <span class="kpi-unit">W</span>
+                </div>
+              </div>
+              <div class="kpi-foot">
+                <span>جهد الشبكة</span>
+                <span id="kpiVolts" class="num" style="color:var(--accent); font-weight:700">220.0V AC</span>
+              </div>
+            </article>
+
+            <!-- Energy & Billing KPI -->
+            <article class="card kpi-card">
+              <div class="kpi-head">
+                <span>الطاقة والفاتورة</span>
+                <button id="btnResetEnergy" class="btn btn-ghost btn-sm" style="min-height:30px;padding:2px 8px;" title="تصفير عداد الطاقة" aria-label="تصفير عداد الطاقة">
+                  <i class="fa-solid fa-rotate-left"></i>
+                </button>
+              </div>
+              <div class="kpi-body" style="flex-wrap:wrap">
+                <div class="kpi-val-wrap num">
+                  <span id="kpiKwh" class="kpi-val" style="font-size:1.35rem">0.000</span>
+                  <span class="kpi-unit">kWh</span>
+                </div>
+                <div class="kpi-val-wrap">
+                  <span id="kpiCost" class="kpi-val num" style="font-size:1.25rem; color:var(--warn)">0.00</span>
+                  <span class="kpi-unit">ج.م</span>
+                </div>
+              </div>
+              <div class="kpi-foot">
+                <span id="kpiTariff" class="num">1.25 EGP/kWh</span>
+                <a href="#energy">التفاصيل ▾</a>
+              </div>
+            </article>
+          </div>
+
+          <!-- Master Controls & Quick Outlet Tiles -->
+          <section class="card master-bar">
+            <div class="master-buttons">
+              <button id="btnMasterOn" class="btn btn-success" aria-label="تشغيل كل المخارج">
+                <i id="iconMasterOn" class="fa-solid fa-power-off"></i>
+                <span id="labelMasterOn">تشغيل الكل</span>
+              </button>
+              <button id="btnMasterOff" class="btn btn-danger" aria-label="فصل كل المخارج">
+                <i class="fa-solid fa-ban"></i>
+                <span>فصل الكل</span>
+              </button>
+            </div>
+            <div id="quickTiles" class="quick-tiles"></div>
+          </section>
+
+          <!-- Live Power SVG Chart & Event Log -->
+          <div class="two-col-grid">
+            <section class="card">
+              <div class="section-header" style="margin-bottom:12px">
+                <h3 class="section-title">
+                  <i class="fa-solid fa-chart-area" style="color:var(--accent)"></i>
+                  <span>مخطط القدرة اللحظي (واط)</span>
+                </h3>
+                <span class="section-sub">آخر 30 قراءة</span>
+              </div>
+              <div id="powerChartWrap" class="chart-wrap">
+                <svg id="powerChartSvg" class="chart-svg" viewBox="0 0 600 200" preserveAspectRatio="none" role="img" aria-label="مخطط استهلاك القدرة"></svg>
+                <div id="powerChartEmpty" class="chart-empty">
+                  <i class="fa-solid fa-wave-square" style="font-size:1.4rem"></i>
+                  <span>في انتظار أول قراءة من المشترك...</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="card">
+              <div class="section-header" style="margin-bottom:10px">
+                <h3 class="section-title">
+                  <i class="fa-solid fa-terminal" style="color:var(--accent-2)"></i>
+                  <span>سجل الأحداث الحي</span>
+                </h3>
+                <button id="btnClearLogs" class="btn btn-ghost btn-sm" style="min-height:32px">مسح</button>
+              </div>
+              <div id="logConsole" class="log-box" aria-live="polite"></div>
+            </section>
+          </div>
+        </section>
+
+        <!-- ══════════ SCREEN 2: OUTLETS ══════════ -->
+        <section id="screen-outlets" class="screen" aria-labelledby="title-outlets">
+          <div class="section-header">
+            <div>
+              <h2 id="title-outlets" class="section-title">
+                <i class="fa-solid fa-sliders" style="color:var(--accent)"></i>
+                <span>المخارج الذكية الأربعة</span>
+              </h2>
+              <p class="section-sub">أولوية فصل الأحمال التلقائي (P4 ← P3 ← P2، ويبقى P1 محمياً) • حد مستمر 7A للمخرج</p>
+            </div>
+          </div>
+          <div id="outletsContainer" class="outlets-grid"></div>
+        </section>
+
+        <!-- ══════════ SCREEN 3: ENERGY ══════════ -->
+        <section id="screen-energy" class="screen" aria-labelledby="title-energy">
+          <div class="section-header">
+            <div>
+              <h2 id="title-energy" class="section-title">
+                <i class="fa-solid fa-chart-pie" style="color:var(--warn)"></i>
+                <span>الطاقة واستهلاك الفاتورة</span>
+              </h2>
+              <p class="section-sub">توزيع الأحمال وتقدير الفاتورة الشهرية</p>
+            </div>
+            <button id="btnRefreshAnalytics" class="btn btn-ghost btn-sm">
+              <i class="fa-solid fa-arrows-rotate"></i>
+              <span>تحديث التحليلات</span>
+            </button>
+          </div>
+
+          <div class="kpi-grid">
+            <article class="card kpi-card">
+              <div class="kpi-head"><span>إجمالي الطاقة</span></div>
+              <div class="kpi-val-wrap num">
+                <span id="enTotalKwh" class="kpi-val">0.000</span>
+                <span class="kpi-unit">kWh</span>
+              </div>
+              <div class="kpi-foot"><span>التعريفة</span><span id="enTariff" class="num">1.25 EGP</span></div>
+            </article>
+            <article class="card kpi-card">
+              <div class="kpi-head"><span>التكلفة الحالية</span></div>
+              <div class="kpi-val-wrap">
+                <span id="enTotalCost" class="kpi-val num" style="color:var(--warn)">0.00</span>
+                <span class="kpi-unit">ج.م</span>
+              </div>
+              <div class="kpi-foot"><span>أعلى مخرج الآن</span><span id="enTopOutlet">—</span></div>
+            </article>
+            <article class="card kpi-card">
+              <div class="kpi-head"><span>أقصى قدرة مسجلة</span></div>
+              <div class="kpi-val-wrap num">
+                <span id="enPeakWatts" class="kpi-val" style="color:var(--accent)">--</span>
+                <span class="kpi-unit">W</span>
+              </div>
+              <div class="kpi-foot"><span>متوسط القدرة</span><span id="enAvgWatts" class="num">-- W</span></div>
+            </article>
+            <article class="card kpi-card">
+              <div class="kpi-head"><span>التوقع الشهري</span></div>
+              <div class="kpi-val-wrap">
+                <span id="enProjCost" class="kpi-val num" style="color:var(--danger)">--</span>
+                <span class="kpi-unit">ج.م</span>
+              </div>
+              <div class="kpi-foot"><span>تقدير kWh</span><span id="enProjKwh" class="num">--</span></div>
+            </article>
+          </div>
+
+          <section class="card">
+            <h3 class="section-title" style="margin-bottom:14px">
+              <i class="fa-solid fa-bars-progress" style="color:var(--accent-2)"></i>
+              <span>توزيع الاستهلاك على المخارج</span>
+            </h3>
+            <div id="energyBreakdown" class="energy-list"></div>
+          </section>
+        </section>
+
+        <!-- ══════════ SCREEN 4: SETTINGS ══════════ -->
+        <section id="screen-settings" class="screen" aria-labelledby="title-settings">
+          <div class="section-header">
+            <div>
+              <h2 id="title-settings" class="section-title">
+                <i class="fa-solid fa-gear" style="color:var(--accent)"></i>
+                <span>إعدادات الاتصال والصوت والمظهر</span>
+              </h2>
+              <p class="section-sub">مفصول عبر Transport Adapter ليدعم Backend وMock وMQTT وWebSocket</p>
+            </div>
+            <a href="/api-docs" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">
+              <i class="fa-solid fa-book"></i>
+              <span class="ltr">API Docs (Swagger)</span>
+            </a>
+          </div>
+
+          <div class="settings-grid">
+            <!-- Appearance & Account -->
+            <section class="card" style="display:flex;flex-direction:column;gap:14px">
+              <h3 class="section-title"><i class="fa-solid fa-palette" style="color:var(--accent)"></i><span>المظهر والحساب</span></h3>
+
+              <div class="section-header" style="padding:10px;border-radius:12px;background:var(--surface-subtle);border:1px solid var(--border)">
+                <div>
+                  <div style="font-weight:800;font-size:.84rem">وضع المظهر (Theme)</div>
+                  <div class="section-sub" id="settingsThemeText">داكن</div>
+                </div>
+                <button id="btnThemeSettings" class="btn btn-ghost btn-sm">
+                  <i class="fa-solid fa-circle-half-stroke"></i>
+                  <span>تبديل المظهر</span>
+                </button>
+              </div>
+
+              <div class="section-header" style="padding:10px;border-radius:12px;background:var(--surface-subtle);border:1px solid var(--border)">
+                <div>
+                  <div style="font-weight:800;font-size:.84rem" id="settingsAccountName">زائر (غير مسجل)</div>
+                  <div class="section-sub" id="settingsAccountEmail">سجل دخولك للتحكم عبر الـ Backend</div>
+                </div>
+                <button id="btnAuthSettings" class="btn btn-primary btn-sm">تسجيل دخول</button>
+              </div>
+
+              <div class="field">
+                <label class="field-label" for="cfgDeviceId">معرّف الجهاز النشط (Device ID)</label>
+                <div class="timer-row">
+                  <input id="cfgDeviceId" class="input ltr" type="text" placeholder="EN_SIM1">
+                  <button id="btnApplyDevice" class="btn btn-ghost btn-sm" style="flex-shrink:0">تطبيق</button>
+                </div>
+              </div>
+            </section>
+
+            <!-- Transport Config -->
+            <section class="card" style="display:flex;flex-direction:column;gap:12px">
+              <h3 class="section-title"><i class="fa-solid fa-network-wired" style="color:var(--accent-2)"></i><span>طبقة الاتصال (Transport)</span></h3>
+
+              <div class="field">
+                <label class="field-label" for="cfgTransport">نوع الاتصال</label>
+                <select id="cfgTransport" class="select">
+                  <option value="backend">Backend Server (Express + WebSocket + REST API)</option>
+                  <option value="mock">محاكي ESP32 محلي (Mock Hardware Simulator)</option>
+                  <option value="mqtt">MQTT مباشر عبر WebSocket (Paho)</option>
+                  <option value="ws">WebSocket مخصص خارجي</option>
+                </select>
+              </div>
+
+              <div id="mqttSettingsFields" style="display:flex;flex-direction:column;gap:10px">
+                <div class="field">
+                  <label class="field-label" for="cfgMqttPreset">إعداد سريع للبروكر (MQTT Preset)</label>
+                  <select id="cfgMqttPreset" class="select">
+                    <option value="custom">مخصص / EMQX Cloud الموحد</option>
+                    <option value="emqx_public">broker.emqx.io (SSL 8884)</option>
+                    <option value="hivemq_public">broker.hivemq.com (SSL 8884)</option>
+                  </select>
+                </div>
+                <div class="schedule-times">
+                  <div class="field">
+                    <label class="field-label" for="cfgMqttHost">Host</label>
+                    <input id="cfgMqttHost" class="input ltr" type="text" placeholder="geeae33e.ala.eu-central-1.emqxsl.com">
+                  </div>
+                  <div class="field">
+                    <label class="field-label" for="cfgMqttPort">Port</label>
+                    <input id="cfgMqttPort" class="input num" type="number" placeholder="8084">
+                  </div>
+                </div>
+                <div class="schedule-times">
+                  <div class="field">
+                    <label class="field-label" for="cfgMqttUser">اسم المستخدم (اختياري)</label>
+                    <input id="cfgMqttUser" class="input ltr" type="text" autocomplete="off">
+                  </div>
+                  <div class="field">
+                    <label class="field-label" for="cfgMqttPass">كلمة المرور (اختياري)</label>
+                    <input id="cfgMqttPass" class="input ltr" type="password" autocomplete="off">
+                  </div>
+                </div>
+                <div class="schedule-times">
+                  <div class="field">
+                    <label class="field-label" for="cfgTopicState">State Topic</label>
+                    <input id="cfgTopicState" class="input ltr" type="text" placeholder="electronova/EN_SIM1/state">
+                  </div>
+                  <div class="field">
+                    <label class="field-label" for="cfgTopicCmd">Command Topic</label>
+                    <input id="cfgTopicCmd" class="input ltr" type="text" placeholder="electronova/EN_SIM1/cmd">
+                  </div>
+                </div>
+                <label class="checkbox-row">
+                  <input id="cfgMqttSsl" type="checkbox" checked>
+                  <span>تفعيل SSL / WSS المشفر</span>
+                </label>
+              </div>
+
+              <div id="wsSettingsFields" class="hidden" style="display:flex;flex-direction:column;gap:10px">
+                <div class="field">
+                  <label class="field-label" for="cfgWsUrl">رابط WebSocket مخصص</label>
+                  <input id="cfgWsUrl" class="input ltr" type="text" placeholder="wss://your-server.example/ws">
+                </div>
+                <div class="field">
+                  <label class="field-label" for="cfgWsToken">رمز المصادقة (Token - اختياري)</label>
+                  <input id="cfgWsToken" class="input ltr" type="password" autocomplete="off">
+                </div>
+              </div>
+
+              <div class="modal-actions">
+                <button id="btnResetSettings" type="button" class="btn btn-ghost btn-sm">رجوع للافتراضي</button>
+                <button id="btnSaveSettings" type="button" class="btn btn-primary btn-sm">حفظ وإعادة الاتصال</button>
+              </div>
+            </section>
+
+            <!-- Voice Settings -->
+            <section class="card" style="display:flex;flex-direction:column;gap:12px">
+              <h3 class="section-title"><i class="fa-solid fa-microphone-lines" style="color:var(--accent)"></i><span>إعدادات الأوامر الصوتية</span></h3>
+              <div class="schedule-times">
+                <div class="field">
+                  <label class="field-label" for="cfgVoiceLang">لغة الميكروفون</label>
+                  <select id="cfgVoiceLang" class="select">
+                    <option value="ar-EG">العربية — مصر (افتراضي)</option>
+                    <option value="en-US">English (US)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="cfgVoiceMode">سرعة التنفيذ</label>
+                  <select id="cfgVoiceMode" class="select">
+                    <option value="instant">فوري (على Interim للأوامر الواضحة)</option>
+                    <option value="final">بعد انتهاء الجملة فقط (Final)</option>
+                  </select>
+                </div>
+              </div>
+              <label class="checkbox-row">
+                <input id="cfgVoiceBeeps" type="checkbox" checked>
+                <span>تشغيل أصوات التنبيه (WebAudio Beeps)</span>
+              </label>
+            </section>
+
+            <!-- Voice Cheat-Sheet -->
+            <section class="card">
+              <h3 class="section-title" style="margin-bottom:10px"><i class="fa-solid fa-list-check" style="color:var(--accent-2)"></i><span>دليل الأوامر الصوتية</span></h3>
+              <table class="cheat-table">
+                <thead>
+                  <tr><th>الأمر بالعربي</th><th>الأمر بالإنجليزي</th><th>التأثير</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>شغل الكل / افتح الكل</td><td class="ltr">turn on all</td><td>تشغيل المخارج الأربعة</td></tr>
+                  <tr><td>افصل الكل / اطفي الكل</td><td class="ltr">all off / shutdown</td><td>فصل المخارج الأربعة</td></tr>
+                  <tr><td>شغل 1 / شغل الراوتر</td><td class="ltr">turn on 1</td><td>تشغيل مخرج 1</td></tr>
+                  <tr><td>شغل واحد وتلاتة</td><td class="ltr">turn on 1 and 3</td><td>تشغيل مخرجين معاً</td></tr>
+                  <tr><td>اقفل التالت / فصل ٣</td><td class="ltr">2 off / 1 and 2 off</td><td>فصل مخارج محددة</td></tr>
+                </tbody>
+              </table>
+            </section>
+          </div>
+        </section>
+
+      </main>
     </div>
-    <div class="flex items-center gap-2">
-      <button onclick="triggerSafetyUnlock()" class="px-2.5 py-1 rounded bg-black/40 hover:bg-black/60 border border-white/20 text-xs">
-        فك القفل يدوياً
+
+    <!-- ── Floating Persistent Voice Dock (All Screens) ── -->
+    <aside class="voice-dock" aria-label="شريط التحكم الصوتي العائم">
+      <button id="btnVoiceDock" class="voice-mic-btn" aria-label="تشغيل أو إيقاف الأوامر الصوتية">
+        <i id="voiceDockIcon" class="fa-solid fa-microphone"></i>
+        <span id="voiceDockLabel">صوت</span>
       </button>
-      <button onclick="triggerSequentialRestore()" class="px-2.5 py-1 rounded bg-black/40 hover:bg-black/60 border border-white/20 text-xs">
-        استعادة تدريجية (3 ثوانٍ)
+      <div id="voiceDockPill" class="voice-pill" aria-live="polite">
+        قل: "شغل الراوتر" أو "شغل واحد وتلاتة" أو "all off"
+      </div>
+      <button id="btnVoiceLangDock" class="btn btn-ghost btn-sm num" style="min-height:44px;min-width:46px;border-radius:999px;" title="تبديل لغة المايك (ع / EN)" aria-label="تبديل لغة الميكروفون">
+        ع
       </button>
-    </div>
+    </aside>
   </div>
 
-  <!-- ── Main Dashboard Content ── -->
-  <main class="max-w-7xl mx-auto w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-5 flex-1 space-y-4 sm:space-y-5">
-
-    <!-- KPI Grid -->
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-      
-      <!-- Temperature KPI -->
-      <div class="glass-card rounded-2xl p-3.5 sm:p-4 min-w-0">
-        <div class="flex items-center justify-between text-gray-400 mb-1">
-          <span class="text-[11px] sm:text-xs font-bold truncate">الحرارة <span class="ltr text-gray-500">(DS18B20 / DHT)</span></span>
-          <i class="fa-solid fa-temperature-half text-amber-400 text-sm sm:text-base shrink-0"></i>
-        </div>
-        <div class="ltr flex items-baseline gap-1 my-1">
-          <span id="valTemp" class="text-2xl sm:text-3xl font-black font-mono-num text-white">--.-</span>
-          <span class="text-xs sm:text-base text-gray-400 font-bold">°C</span>
-        </div>
-        <div class="w-full bg-gray-700/50 h-1.5 rounded-full mt-2 overflow-hidden">
-          <div id="barTemp" class="bg-emerald-500 h-full transition-all duration-300" style="width: 35%"></div>
-        </div>
-        <div class="flex justify-between text-[10px] sm:text-[11px] text-gray-400 mt-1.5">
-          <span>آمن <span class="ltr">&lt;60°</span></span>
-          <span class="text-rose-400">قفل فوري <span class="ltr">&gt;65°</span></span>
-        </div>
-      </div>
-
-      <!-- Current Amps KPI -->
-      <div class="glass-card rounded-2xl p-3.5 sm:p-4 min-w-0">
-        <div class="flex items-center justify-between text-gray-400 mb-1">
-          <span class="text-[11px] sm:text-xs font-bold truncate">التيار الكلي</span>
-          <i class="fa-solid fa-bolt-lightning text-cyan-400 text-sm sm:text-base shrink-0"></i>
-        </div>
-        <div class="flex items-baseline justify-between gap-1 my-1 flex-wrap">
-          <span class="ltr flex items-baseline gap-1">
-            <span id="valAmps" class="text-2xl sm:text-3xl font-black font-mono-num text-cyan-400">0.0</span>
-            <span class="text-xs sm:text-base text-gray-400 font-bold">A</span>
-          </span>
-          <span class="ltr text-[10px] text-gray-500 font-mono-num">/ 16A Max</span>
-        </div>
-        <div class="w-full bg-gray-700/50 h-1.5 rounded-full mt-2 overflow-hidden">
-          <div id="barAmps" class="bg-cyan-500 h-full transition-all duration-300" style="width: 0%"></div>
-        </div>
-        <div class="flex justify-between text-[10px] sm:text-[11px] text-gray-400 mt-1.5">
-          <span>مستمر آمن <span class="ltr">12.8A</span></span>
-          <span class="text-rose-400">فصل <span class="ltr">&gt;16A</span></span>
-        </div>
-      </div>
-
-      <!-- Power Watts & Voltage KPI -->
-      <div class="glass-card rounded-2xl p-3.5 sm:p-4 min-w-0">
-        <div class="flex items-center justify-between text-gray-400 mb-1">
-          <span class="text-[11px] sm:text-xs font-bold truncate">القدرة والجهد</span>
-          <i class="fa-solid fa-gauge-high text-emerald-400 text-sm sm:text-base shrink-0"></i>
-        </div>
-        <div class="ltr flex items-baseline gap-1 my-1">
-          <span id="valWatts" class="text-2xl sm:text-3xl font-black font-mono-num text-emerald-400">0</span>
-          <span class="text-xs sm:text-base text-gray-400 font-bold">W</span>
-        </div>
-        <div class="flex items-center justify-between text-[10px] sm:text-[11px] text-gray-400 mt-3 pt-1.5 border-t border-gray-800/80">
-          <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>WebSocket حي</span>
-          <span id="valVolts" class="ltr font-mono-num text-cyan-400">220.0V AC</span>
-        </div>
-      </div>
-
-      <!-- Energy & Billing KPI -->
-      <div class="glass-card rounded-2xl p-3.5 sm:p-4 min-w-0">
-        <div class="flex items-center justify-between text-gray-400 mb-1 gap-1">
-          <span class="text-[11px] sm:text-xs font-bold truncate">الطاقة والفاتورة</span>
-          <button onclick="resetEnergy()" title="تصفير عداد الطاقة"
-            class="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 hover:bg-rose-900/70 text-gray-300 border border-gray-700 shrink-0">
-            <i class="fa-solid fa-rotate-left"></i>
-          </button>
-        </div>
-        <div class="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-0.5 my-1">
-          <span class="ltr flex items-baseline gap-1">
-            <span id="valKwh" class="text-lg sm:text-2xl font-black font-mono-num text-white">0.000</span>
-            <span class="text-[10px] sm:text-xs text-gray-400">kWh</span>
-          </span>
-          <span class="flex items-baseline gap-1">
-            <span id="valCost" class="text-base sm:text-xl font-black font-mono-num text-yellow-400">0.00</span>
-            <span class="text-[10px] sm:text-xs text-gray-400">ج.م</span>
-          </span>
-        </div>
-        <div class="flex justify-between text-[10px] text-gray-500 mt-1.5 pt-1.5 border-t border-gray-800/80">
-          <span class="ltr">1.25 EGP/kWh</span>
-          <button onclick="openAnalyticsModal()" class="text-cyan-400 hover:underline">تفاصيل ▾</button>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- Master Controls & Voice Control Bar -->
-    <div class="glass-card rounded-2xl p-3.5 sm:p-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-      
-      <!-- Master ON / OFF Buttons -->
-      <div class="grid grid-cols-2 sm:flex items-center gap-2.5">
-        <button id="btnAllOn" onclick="sendMasterCommand(true)" class="flex items-center justify-center gap-2 px-3 sm:px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/25 transition active:scale-95">
-          <i id="iconAllOn" class="fa-solid fa-power-off"></i>
-          <span id="labelAllOn">تشغيل الكل</span>
-          <span class="ltr text-[10px] opacity-80 hidden sm:inline">(ALL ON)</span>
-        </button>
-        <button id="btnAllOff" onclick="sendMasterCommand(false)" class="flex items-center justify-center gap-2 px-3 sm:px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg shadow-rose-600/25 transition active:scale-95">
-          <i class="fa-solid fa-ban"></i>
-          <span>فصل الكل</span>
-          <span class="ltr text-[10px] opacity-80 hidden sm:inline">(ALL OFF)</span>
-        </button>
-      </div>
-
-      <!-- Advanced Continuous Voice Control -->
-      <div class="flex flex-col sm:flex-row sm:items-center gap-2 pt-2.5 lg:pt-0 border-t lg:border-t-0 border-gray-800/80">
-        <div class="flex items-center gap-1.5">
-          <button id="btnVoice" onclick="toggleVoice()"
-            class="flex-1 sm:flex-initial flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl bg-cyan-950/70 hover:bg-cyan-900/80 border border-cyan-600/70 text-cyan-200 text-xs font-bold transition active:scale-95">
-            <i id="voiceIcon" class="fa-solid fa-microphone text-sm"></i>
-            <span id="voiceStatus">تشغيل الأوامر الصوتية</span>
-          </button>
-          <button id="btnVoiceLang" onclick="toggleVoiceLang()" title="تبديل لغة الميكروفون (عربي / إنجليزي)"
-            class="px-3 py-2.5 rounded-xl bg-gray-900 hover:bg-gray-800 border border-gray-700 text-cyan-300 text-xs font-bold font-mono-num shrink-0">
-            عربي
-          </button>
-        </div>
-
-        <div id="voiceFeedback" class="text-[11px] px-3 py-2 rounded-xl bg-gray-950/90 border border-gray-800 text-gray-400 truncate max-w-full sm:max-w-md">
-          قل: "شغل الراوتر" أو "افصل الكل" أو "turn on 1"
-        </div>
-      </div>
-
-    </div>
-
-    <!-- Outlets Grid (4 Sockets) -->
-    <div>
-      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-3">
-        <h2 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
-          <i class="fa-solid fa-sliders text-cyan-400"></i>
-          <span>المخارج الذكية الأربعة ومراقبة الأحمال</span>
-        </h2>
-        <span class="text-[11px] text-gray-400">تحكم فردي + جدولة ومؤقتات + نظام أولويات الأحمال (حد مستمر 7A/عين)</span>
-      </div>
-      <div id="outletsContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4"></div>
-    </div>
-
-    <!-- Power Chart & Live Event Logger -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5">
-      
-      <!-- Live Power Graph -->
-      <div class="lg:col-span-2 glass-card rounded-2xl p-4 min-w-0">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="font-bold text-white text-sm flex items-center gap-2">
-            <i class="fa-solid fa-chart-line text-cyan-400"></i>
-            <span>مخطط استهلاك القدرة اللحظي (واط)</span>
-          </h3>
-          <span class="text-[11px] text-gray-400">تحديث لحظي عبر WebSocket</span>
-        </div>
-        <div class="h-48 sm:h-52 w-full relative">
-          <canvas id="powerChart"></canvas>
-        </div>
-      </div>
-
-      <!-- Live Event Logs Console -->
-      <div class="glass-card rounded-2xl p-4 flex flex-col justify-between min-w-0">
-        <div>
-          <div class="flex items-center justify-between mb-2.5">
-            <h3 class="font-bold text-white text-sm flex items-center gap-2">
-              <i class="fa-solid fa-terminal text-emerald-400"></i>
-              <span>سجل أحداث النظام</span>
-            </h3>
-            <button onclick="clearLogs()" class="text-[11px] text-gray-400 hover:text-white">مسح</button>
-          </div>
-          <div id="logConsole" class="bg-gray-950 rounded-xl p-3 h-44 overflow-y-auto text-[11px] text-gray-300 space-y-1.5 border border-gray-800">
-            <div class="text-cyan-400">&gt; جاري تهيئة لوحة التحكم ElectroNova v4.2 Unified...</div>
-          </div>
-        </div>
-        <div class="mt-2.5 pt-2 border-t border-gray-800 text-[11px] text-gray-500 flex justify-between items-center gap-2">
-          <span>MQTT Contract:</span>
-          <code id="lblTopicFooter" class="ltr text-cyan-400 font-mono text-[10px]">EMQX Cloud SSL (8883)</code>
-        </div>
-      </div>
-
-    </div>
-
-  </main>
-
-  <!-- ── Footer ── -->
-  <footer class="glass-card border-t border-gray-800/80 px-4 py-2.5 mt-4">
-    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between text-[11px] sm:text-xs text-gray-400 gap-1 text-center">
-      <span>ElectroNova Team © 2026 • كلية الهندسة جامعة الأزهر</span>
-      <div class="flex items-center gap-3">
-        <a href="/api-docs" target="_blank" class="text-cyan-400 hover:underline">Swagger API Docs</a>
-        <span class="text-gray-600">•</span>
-        <span class="ltr text-[10px] text-gray-500">EMQX Cloud Unified + RCBO 30mA + MCB 16A</span>
-      </div>
-    </div>
-  </footer>
-
-  <!-- ── Auth Modal ── -->
-  <div id="authModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-gray-900 border border-gray-700 rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
-      <div class="flex items-center justify-between border-b border-gray-800 pb-3">
-        <h3 class="font-bold text-white text-sm sm:text-base flex items-center gap-2">
-          <i class="fa-solid fa-shield-halved text-cyan-400"></i>
-          <span>تسجيل دخول لوحة التحكم</span>
+  <!-- ── Auth Modal (Login / Register) ── -->
+  <div id="authModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
+    <div class="modal-card">
+      <div class="section-header">
+        <h3 id="authModalTitle" class="section-title">
+          <i class="fa-solid fa-shield-halved" style="color:var(--accent)"></i>
+          <span>تسجيل الدخول</span>
         </h3>
-        <button onclick="closeAuthModal()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+        <button id="btnCloseAuthModal" class="chip chip-icon" aria-label="إغلاق نافذة الدخول"><i class="fa-solid fa-xmark"></i></button>
       </div>
 
-      <div id="authError" class="hidden p-2 rounded-lg bg-rose-950/80 border border-rose-700 text-rose-300 text-xs"></div>
+      <div class="modal-tabs">
+        <button type="button" id="tabAuthLogin" class="modal-tab active">تسجيل دخول</button>
+        <button type="button" id="tabAuthRegister" class="modal-tab">إنشاء حساب</button>
+      </div>
 
-      <form onsubmit="handleLoginSubmit(event)" class="space-y-3 text-xs">
-        <div>
-          <label class="block text-gray-400 mb-1">البريد الإلكتروني:</label>
-          <input type="email" id="authEmail" value="admin@electronova.local" required
-            class="ltr w-full bg-gray-950 border border-gray-700 rounded-lg p-2 text-white font-mono">
+      <div id="authFormError" class="form-err hidden"></div>
+
+      <form id="authForm" style="display:flex;flex-direction:column;gap:12px">
+        <div id="authNameWrap" class="field hidden">
+          <label class="field-label" for="authNameInput">الاسم الكامل</label>
+          <input id="authNameInput" class="input" type="text" placeholder="أدخل اسمك" autocomplete="name">
         </div>
-        <div>
-          <label class="block text-gray-400 mb-1">كلمة المرور:</label>
-          <input type="password" id="authPassword" value="123456" required
-            class="ltr w-full bg-gray-950 border border-gray-700 rounded-lg p-2 text-white font-mono">
+        <div class="field">
+          <label class="field-label" for="authEmailInput">البريد الإلكتروني</label>
+          <input id="authEmailInput" class="input ltr" type="email" placeholder="name@example.com" autocomplete="email" required>
         </div>
-        <div class="text-[10px] text-gray-500">
-          حساب الأدمن التجريبي جاهز بالبيانات الافتراضية.
+        <div class="field">
+          <label class="field-label" for="authPasswordInput">كلمة المرور</label>
+          <input id="authPasswordInput" class="input ltr" type="password" placeholder="••••••••" autocomplete="current-password" minlength="6" required>
         </div>
-        <div class="pt-2 flex justify-end gap-2">
-          <button type="button" onclick="closeAuthModal()" class="px-4 py-2 rounded-lg bg-gray-800 text-gray-300 text-xs">إلغاء</button>
-          <button type="submit" class="px-5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs transition">دخول</button>
+        <div class="modal-actions">
+          <button type="button" id="btnCancelAuth" class="btn btn-ghost btn-sm">إلغاء</button>
+          <button type="submit" id="btnSubmitAuth" class="btn btn-primary btn-sm">دخول</button>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- ── Analytics & Energy Breakdown Modal ── -->
-  <div id="analyticsModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-gray-900 border border-gray-700 rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl">
-      <div class="flex items-center justify-between border-b border-gray-800 pb-3">
-        <h3 class="font-bold text-white text-sm sm:text-base flex items-center gap-2">
-          <i class="fa-solid fa-chart-pie text-yellow-400"></i>
-          <span>تحليلات الطاقة وفاتورة الكهرباء</span>
+  <!-- ── Switch Device ID Modal ── -->
+  <div id="deviceModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="deviceModalTitle">
+    <div class="modal-card">
+      <div class="section-header">
+        <h3 id="deviceModalTitle" class="section-title">
+          <i class="fa-solid fa-microchip" style="color:var(--accent)"></i>
+          <span>تبديل معرّف الجهاز (Device ID)</span>
         </h3>
-        <button onclick="closeAnalyticsModal()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+        <button id="btnCloseDeviceModal" class="chip chip-icon" aria-label="إغلاق"><i class="fa-solid fa-xmark"></i></button>
       </div>
 
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-        <div class="bg-gray-950 p-2.5 rounded-xl border border-gray-800">
-          <div class="text-[10px] text-gray-400">أقصى قدرة مسجلة</div>
-          <div id="anPeakWatts" class="font-mono-num text-sm font-bold text-cyan-400 mt-1">-- W</div>
+      <div id="deviceFormError" class="form-err hidden"></div>
+
+      <form id="deviceForm" style="display:flex;flex-direction:column;gap:12px">
+        <div class="field">
+          <label class="field-label" for="deviceIdModalInput">Device ID المطلوب (مثل EN_SIM1 أو EN_XXXX)</label>
+          <input id="deviceIdModalInput" class="input ltr num" type="text" pattern="[A-Za-z0-9_-]{1,64}" placeholder="EN_SIM1" required>
         </div>
-        <div class="bg-gray-950 p-2.5 rounded-xl border border-gray-800">
-          <div class="text-[10px] text-gray-400">متوسط القدرة</div>
-          <div id="anAvgWatts" class="font-mono-num text-sm font-bold text-emerald-400 mt-1">-- W</div>
+        <div class="modal-actions">
+          <button type="button" id="btnCancelDevice" class="btn btn-ghost btn-sm">إلغاء</button>
+          <button type="submit" class="btn btn-primary btn-sm">حفظ وتبديل</button>
         </div>
-        <div class="bg-gray-950 p-2.5 rounded-xl border border-gray-800">
-          <div class="text-[10px] text-gray-400">توقع شهري (kWh)</div>
-          <div id="anProjKwh" class="font-mono-num text-sm font-bold text-yellow-400 mt-1">--</div>
-        </div>
-        <div class="bg-gray-950 p-2.5 rounded-xl border border-gray-800">
-          <div class="text-[10px] text-gray-400">توقع الفاتورة</div>
-          <div id="anProjCost" class="font-mono-num text-sm font-bold text-rose-400 mt-1">-- ج.م</div>
-        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Confirm Reset Energy Modal ── -->
+  <div id="resetEnergyModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="resetModalTitle">
+    <div class="modal-card">
+      <div class="section-header">
+        <h3 id="resetModalTitle" class="section-title">
+          <i class="fa-solid fa-rotate-left" style="color:var(--danger)"></i>
+          <span>تصفير عداد الطاقة</span>
+        </h3>
+        <button id="btnCloseResetModal" class="chip chip-icon" aria-label="إغلاق"><i class="fa-solid fa-xmark"></i></button>
       </div>
 
-      <div class="overflow-x-auto">
-        <table class="w-full text-right text-xs">
-          <thead>
-            <tr class="text-gray-400 border-b border-gray-800 text-[10px]">
-              <th class="pb-2">المخرج</th>
-              <th class="pb-2">واط</th>
-              <th class="pb-2">كيلوواط/ساعة</th>
-              <th class="pb-2">التكلفة (ج.م)</th>
-              <th class="pb-2">النسبة</th>
-            </tr>
-          </thead>
-          <tbody id="anTableBody"></tbody>
-        </table>
+      <p style="font-size:.82rem;color:var(--dim)">هل أنت متأكد من تصفير عداد الطاقة التراكمية (<span class="num">kWh</span>) والتكلفة؟</p>
+      <div class="card" style="padding:10px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:.76rem;color:var(--dim)">القراءة الحالية:</span>
+        <span id="resetPreviewVal" class="num" style="font-weight:800;color:var(--warn)">0.000 kWh • 0.00 EGP</span>
       </div>
 
-      <div class="pt-3 border-t border-gray-800 flex justify-end">
-        <button onclick="closeAnalyticsModal()" class="px-5 py-2 rounded-lg bg-gray-800 text-gray-200 text-xs font-bold hover:bg-gray-700 transition">إغلاق</button>
+      <div class="modal-actions">
+        <button type="button" id="btnCancelReset" class="btn btn-ghost btn-sm">إلغاء</button>
+        <button type="button" id="btnConfirmReset" class="btn btn-danger btn-sm">نعم، صفّر العداد</button>
       </div>
     </div>
   </div>
 
-  <!-- JavaScript Client Controller -->
-  <script src="/app.js"></script>
+  <!-- App Bootstrap (Vanilla ES Modules) -->
+  <script type="module" src="/js/main.js"></script>
 </body>
 </html>

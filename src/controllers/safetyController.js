@@ -24,7 +24,7 @@ exports.getSafetyStatus = (req, res) => {
 
 exports.unlockSafety = (req, res, next) => {
   try {
-    const dev = storage.getDeviceState();
+    const dev = mqttService.requireDeviceConnected();
     if (dev.safety.temperatureC >= safetyService.OVERHEAT_RESET_TEMP) {
       return res.status(400).json({
         success: false,
@@ -58,7 +58,7 @@ exports.unlockSafety = (req, res, next) => {
 
 exports.sequentialRestore = async (req, res, next) => {
   try {
-    const dev = storage.getDeviceState();
+    const dev = mqttService.requireDeviceConnected();
     if (dev.safety.isOverheatLocked || dev.safety.isOverloadBlocked) {
       return res.status(403).json({
         success: false,

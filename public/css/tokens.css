@@ -1,0 +1,106 @@
+/* ElectroNova Design System Tokens */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-top: #060b16;
+  --bg-bottom: #0a1222;
+  --bg-gradient:
+    radial-gradient(900px 500px at 85% -10%, rgba(34, 211, 238, 0.13), transparent 60%),
+    radial-gradient(700px 420px at 10% 10%, rgba(52, 211, 153, 0.09), transparent 60%),
+    linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+  --surface: rgba(18, 27, 46, 0.72);
+  --surface-strong: rgba(13, 21, 38, 0.92);
+  --surface-subtle: rgba(10, 16, 30, 0.7);
+  --surface-hover: rgba(28, 41, 68, 0.85);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.15);
+
+  --text: #eef3fb;
+  --dim: #9fb0c8;
+  --mute: #62738f;
+
+  --accent: #22d3ee;
+  --accent-bg: rgba(34, 211, 238, 0.14);
+  --accent-border: rgba(34, 211, 238, 0.35);
+
+  --accent-2: #34d399;
+  --accent-2-bg: rgba(52, 211, 153, 0.14);
+  --accent-2-border: rgba(52, 211, 153, 0.38);
+
+  --warn: #fbbf24;
+  --warn-bg: rgba(251, 191, 36, 0.14);
+  --warn-border: rgba(251, 191, 36, 0.38);
+
+  --danger: #fb7185;
+  --danger-bg: rgba(251, 113, 133, 0.15);
+  --danger-border: rgba(251, 113, 133, 0.42);
+
+  --shadow-card: 0 10px 30px rgba(0, 0, 0, 0.28);
+  --shadow-float: 0 14px 38px rgba(0, 0, 0, 0.48);
+  --glow-green: 0 0 24px rgba(52, 211, 153, 0.22);
+  --glow-red: 0 0 26px rgba(251, 113, 133, 0.32);
+  --glow-cyan: 0 0 24px rgba(34, 211, 238, 0.28);
+
+  --font-ui: 'Cairo', system-ui, -apple-system, sans-serif;
+  --font-num: 'Space Grotesk', 'Cairo', monospace;
+
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-pill: 9999px;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  --topbar-h: 64px;
+  --nav-mobile-h: 68px;
+  --rail-w: 84px;
+  --voice-dock-h: 64px;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --bg-top: #f1f5f9;
+  --bg-bottom: #e2e8f0;
+  --bg-gradient:
+    radial-gradient(900px 500px at 85% -10%, rgba(14, 165, 233, 0.14), transparent 60%),
+    radial-gradient(700px 420px at 10% 10%, rgba(16, 185, 129, 0.12), transparent 60%),
+    linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+  --surface: rgba(255, 255, 255, 0.84);
+  --surface-strong: rgba(255, 255, 255, 0.96);
+  --surface-subtle: rgba(241, 245, 249, 0.88);
+  --surface-hover: rgba(226, 232, 240, 0.9);
+  --border: rgba(15, 23, 42, 0.1);
+  --border-strong: rgba(15, 23, 42, 0.18);
+
+  --text: #0f172a;
+  --dim: #475569;
+  --mute: #64748b;
+
+  --accent: #0284c7;
+  --accent-bg: rgba(2, 132, 199, 0.1);
+  --accent-border: rgba(2, 132, 199, 0.35);
+
+  --accent-2: #059669;
+  --accent-2-bg: rgba(5, 150, 105, 0.1);
+  --accent-2-border: rgba(5, 150, 105, 0.38);
+
+  --warn: #d97706;
+  --warn-bg: rgba(217, 119, 6, 0.12);
+  --warn-border: rgba(217, 119, 6, 0.38);
+
+  --danger: #e11d48;
+  --danger-bg: rgba(225, 29, 72, 0.1);
+  --danger-border: rgba(225, 29, 72, 0.36);
+
+  --shadow-card: 0 8px 24px rgba(15, 23, 42, 0.08);
+  --shadow-float: 0 14px 32px rgba(15, 23, 42, 0.14);
+  --glow-green: 0 0 20px rgba(5, 150, 105, 0.18);
+  --glow-red: 0 0 22px rgba(225, 29, 72, 0.22);
+  --glow-cyan: 0 0 20px rgba(2, 132, 199, 0.18);
+}

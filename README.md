@@ -1,94 +1,94 @@
-# ⚡ ElectroNova Backend Server
-## خادم السحابة للمشترك الكهربائي الذكي — هندسة الأزهر
+# ⚡ ElectroNova — Smart Power Strip (Full-Stack + Modular ES Frontend)
+## النظام المتكامل للمشترك الكهربائي الذكي — هندسة الأزهر
 
-خادم خلفي متكامل بمواصفات عالمية مبني بـ **Node.js + Express**، مخصص للربط المباشر مع تطبيق الموبايل (Flutter)، لوحات التحكم (Web)، ووحدة الـ ESP32.
-
----
-
-### 🌟 أهم مميزات ومحركات اللوجيك (Engines):
-
-1. **محرك الأوامر الصوتية الذكي (Dual-Language Voice NLP Engine):**
-   - يدعم العربية الفصحى والعامية المصرية والإنجليزية (`/api/voice/command`).
-   - يتعرف على الأرقام وأسماء الأجهزة: "شغل الراوتر" (مخرج 1)، "اطفي الشواحن" (مخرج 4)، "افصل الكل"، "Turn on 2", "All off".
-   - يرجع رداً صوتياً ونصياً جاهزاً لتطبيق الفلاتر (`feedbackSpeech`).
-
-2. **محرك حماية الأمان وفصل الأحمال (Hardware Safety & Load Shedding Engine):**
-   - **حماية الحرارة:** فصل فوري عند تخطي 65°C مع قفل الأمان (Lockout)، ولا يسمح بالتشغيل إلا بعد تبريد العلبة تحت 60°C.
-   - **فصل الأحمال بالترتيب (Priority Load Shedding):** عند اقتراب التيار من 16A، يفصل المخرج ذو الأولوية الأقل (P4 ثم P3)، ولا يمس المخرج الحرج (P1 كالراوتر).
-   - **منع تيار الاندفاع (Sequential Power Restore):** تشغيل المخارج بتسلسل زمني (فاصل 3 ثوانٍ) لحماية قاطع المنزل من الانهيار.
-
-3. **محرك الأتمتة والجدولة الزمني (Cron Automation Engine):**
-   - فحص دوري كل دقيقة لتنفيذ الجداول اليومية حتى لو انقطع الـ NTP عن الـ ESP32.
-
-4. **الربط السحابي الموحد عبر EMQX Cloud (MQTTS 8883):**
-   - موحّد مع تطبيق الأندرويد والـ ESP32 (بروتوكول `electronova/{deviceId}/cmd|state|status`، المعرف الافتراضي `EN_SIM1`).
-   - يدعم التوافق التام مع الصيغ الموحدة (`outlets, temp, amps, watts, alert`) والقديمة (`v4.0`) وحساب الـ `kWh` التلقائي عند عدم إرساله من المحاكي.
-
-5. **محرك تحليلات الطاقة وحساب الفاتورة (Energy & Billing Analytics):**
-   - حساب إجمالي الكيلوواط/ساعة والفاتورة بالجنيه المصري (تعريفة قابلة للتعديل).
-   - توزيع الاستهلاك لكل مخرج بالنسبة المئوية وتوقع الاستهلاك الشهري.
-
-6. **توثيق تفاعلي كامل عبر Swagger / OpenAPI 3.0 (`/api-docs`):**
-   - واجهة تجربة حية لكل الـ Endpoints جاهزة فوراً.
-
-7. **بث حي عبر WebSocket (`/ws/telemetry`):**
-   - بث فوري بدون أي تأخير (Zero-latency) لكل قراءات الجهد والأمبير والواط والحرارة وحالات الطوارئ (`OVERHEAT` / `OVERLOAD`).
+مشروع **ElectroNova** يضم Backend متكامل بـ **Node.js + Express** (متصل بـ **EMQX Cloud SSL**) مع واجهة ويب معمارية مبنية بـ **Vanilla ES Modules + Pure CSS Design Tokens + SVG Chart** بدون أي Build Tools.
 
 ---
 
-### 🚀 تشغيل المشروع محلياً (Quickstart)
+### 📁 هيكل المشروع
 
+```
+electronova/
+├─ src/                         # Express Backend + MQTT + Safety Engine + Cron + Voice NLP
+├─ public/                      # Modular Static Frontend (يُخدم تلقائياً من السيرفر أو أي استضافة)
+│  ├─ index.html                # واجهة RTL بـ 4 شاشات + شريط صوت عائم + Dark/Light Theme
+│  ├─ css/
+│  │  ├─ tokens.css             # ألوان (#060b16 / #22d3ee / #34d399) + Light theme tokens
+│  │  ├─ base.css               # Shell layout (Mobile Bottom Nav + Desktop Side Rail >= 900px)
+│  │  └─ components.css         # Glassmorphism cards, Ring Gauge, Switches, Voice Dock, Modals
+│  └─ js/
+│     ├─ main.js                # Bootstrap
+│     ├─ config.js              # الإعدادات + URL params (?mock=1) + localStorage
+│     ├─ strings.js             # النصوص العربية وبيانات المخارج
+│     ├─ core/                  # store.js, protocol.js, safety.js, controller.js
+│     ├─ transport/             # backend.js (افتراضي) | mock.js | mqtt.js | ws.js
+│     ├─ voice/                 # parser.js (pure), engine.js, router.js, beep.js
+│     └─ ui/                    # render.js, router.js, outletCards.js, chart.js (SVG), energyView.js, voiceDock.js, settings.js, toast.js
+├─ tests/
+│  └─ parser.test.mjs           # اختبارات الـ Voice Parser وقواعد الأمان والبروتوكول
+└─ package.json
+```
+
+---
+
+### 🚀 التشغيل محلياً (Quickstart)
+
+#### 1) تشغيل Full-Stack (Backend + Frontend معاً):
 ```bash
 npm install
 npm start
 ```
+- الداشبورد: `http://localhost:5000/`
+- محاكي الهاردوير بدون ESP32 أو Backend عبر الرابط: `http://localhost:5000/?mock=1`
+- توثيق API التفاعلي (Swagger): `http://localhost:5000/api-docs`
 
-- **لوحة التحكم (Frontend Unified):** `http://localhost:5000/`
-- **رابط التوثيق التفاعلي (Swagger UI):** `http://localhost:5000/api-docs`
-- **نقطة الـ API الأساسية:** `http://localhost:5000/api`
-- **بث WebSocket المباشر:** `ws://localhost:5000/ws/telemetry`
-- **فحص الجاهزية (Healthcheck):** `GET http://localhost:5000/health`
-
----
-
-### ☁️ النشر على استضافة Render.com (Full-Stack Free Hosting)
-
-المشروع موحّد بالكامل في هذا المجلد وجاهز للرفع على Render عبر ملف `render.yaml`:
-1. ارفع محتويات مجلد `electronova` إلى مستودع GitHub خاص بك.
-2. في [Render.com](https://render.com) اختر **New -> Blueprint** (أو **Web Service**).
-3. اربط مستودع GitHub وأدخل متغيرات البيئة السرية (`MQTT_USERNAME` و `MQTT_PASSWORD`).
-4. سيعمل السيرفر والواجهة وWebSocket وEMQX Cloud MQTTS على رابط واحد آمن (`https://your-app.onrender.com`).
-
----
-
-### 🔑 بيانات الدخول الافتراضية للتجربة (Default Admin)
-
-- **البريد الإلكتروني:** `admin@electronova.local`
-- **كلمة المرور:** `123456`
+#### 2) تشغيل الواجهة Static فقط (للتجربة مع Mock أو MQTT مباشر):
+```bash
+npx serve public
+# أو
+python -m http.server 8080 --directory public
+```
+ثم افتح `http://localhost:8080/?mock=1` واختبر الحماية من الـ Console:
+```js
+window.__mock.setTemp(70);     // يفعّل قفل الحرارة > 65°C ويمنع ON
+window.__mock.setTemp(55);     // يفك القفل < 60°C
+window.__mock.setLoad(2, 18);  // يفعّل فصل الأحمال الزائدة > 16A
+```
 
 ---
 
-### 📡 الدليل المرجعي الكامل لمطور تطبيق الفلاتر (API Endpoints Reference)
+### 🧪 تشغيل الاختبارات
 
-| القسم | المسار | الطريقة | الوصف والمدخلات | الحماية |
-|---|---|---|---|---|
-| **المصادقة** | `/api/auth/login` | `POST` | تسجيل الدخول `{ email, password }` ← يرجع `token` | مفتوح |
-| | `/api/auth/register` | `POST` | تسجيل حساب جديد `{ name, email, password }` | مفتوح |
-| | `/api/auth/me` | `GET` | بيانات المستخدم الحالي | `Bearer Token` |
-| **التحكم بالمخارج** | `/api/outlets` | `GET` | قائمة المخارج الأربعة مع حالاتها وقياساتها | `Bearer Token` |
-| | `/api/outlets/:id` | `POST` | تشغيل/فصل مخرج محدد `{ state: true/false }` | `Bearer Token` |
-| | `/api/outlets/all` | `POST` | ماستر تشغيل/فصل الكل `{ state: true/false }` | `Bearer Token` |
-| | `/api/outlets/:id/timer`| `POST` | مؤقت عد تنازلي `{ delaySec: 60 }` | `Bearer Token` |
-| **الأوامر الصوتية** | `/api/voice/command` | `POST` | معالجة الصوت: `{ transcript: "شغل الراوتر", language: "ar" }` | `Bearer Token` |
-| **الأمان والحماية** | `/api/safety/status` | `GET` | فحص درجات الحرارة وعتبات الفصل وحدود التيار | مفتوح |
-| | `/api/safety/unlock` | `POST` | فك قفل الأمان يدوياً بعد تبريد الجهاز | `Bearer Token` |
-| | `/api/safety/sequential-restore` | `POST` | تشغيل متسلسل تدريجي بعد عودة الكهرباء لمنع القفلة | `Bearer Token` |
-| **التحليلات والفاتورة**| `/api/analytics/energy` | `GET` | إحصائيات استهلاك الطاقة التراكمية، الواط الأقصى، وتكلفة الفاتورة | `Bearer Token` |
-| **المقاييس الحية** | `/api/telemetry/live` | `GET` | القراءات اللحظية الحالية من الحساسات وحالة الاتصال والـ Topics | مفتوح |
-| | `/api/telemetry/history`| `GET` | قراءات سابقة لرسم بياني في التطبيق | مفتوح |
-| | `/api/telemetry/logs` | `GET` | سجل الأحداث والعمليات | `Bearer Token` |
-| | `/api/telemetry/energy/reset` | `POST` | تصفير عداد الطاقة | `Bearer Token` |
-| | `/api/telemetry/sync` | `POST` | إرسال طلب مزامنة فورية `{"type":"sync"}` للـ ESP32 | `Bearer Token` |
-| | `/api/telemetry/device` | `POST` | تبديل معرف الجهاز النشط `{ deviceId: "EN_SIM1" }` ديناميكياً | `Bearer Token` |
-| **الجداول** | `/api/schedules` | `GET` | استعراض جداول التشغيل اليومية | `Bearer Token` |
-| | `/api/schedules/:id` | `POST` | حفظ جدول لمخرج `{ enabled, onTime, offTime }` | `Bearer Token` |
+```bash
+node --test tests/parser.test.mjs
+```
+
+---
+
+### 🔌 كيفية إضافة Transport جديد
+
+كل محول اتصال في `public/js/transport/` يرجّع نفس الواجهة القياسية:
+
+```js
+export function createCustomTransport(config, handlers) {
+  return {
+    type: 'custom',
+    connect() {
+      // استدعِ handlers.onStatus('connecting' | 'connected' | 'disconnected')
+      // عند وصول قراءة: handlers.onMessage({ kind: 'telemetry' | 'lwt', data, text, retained })
+    },
+    disconnect() {},
+    publish(cmdObj) { return true; },
+    isConnected() { return true; }
+  };
+}
+```
+أضفه في `public/js/transport/index.js` وفي قائمة `#cfgTransport` في `public/index.html`.
+
+---
+
+### 📡 بروتوكول الاتصال الموحد (Backend & ESP32)
+
+- **Topics:** `electronova/{deviceId}/cmd` | `electronova/{deviceId}/state` | `electronova/{deviceId}/status`
+- **الأوامر:** `{"type":"outlet","id":1,"state":true}` · `{"type":"all","state":false}` · `{"type":"sync"}` · `{"type":"schedule","id":1,"enabled":true,"on":"08:00","off":"23:00"}` · `{"type":"timer","id":1,"state":true,"delaySec":60}` · `{"type":"resetEnergy"}`
+- **قواعد الأمان:** فصل تلقائي عند حرارة ≥ 65°C (يُفك < 60°C)، وفصل الأحمال بالتدريج عند تيار > 16A (`P4 ← P3 ← P2`)، وأوامر الفصل (`OFF`) مسموحة دائماً.

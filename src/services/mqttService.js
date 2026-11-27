@@ -23,6 +23,8 @@ class MqttService extends EventEmitter {
     const options = {
       clientId: config.mqtt.clientId,
       clean: true,
+      keepalive: 30,
+      resubscribe: true,
       connectTimeout: 8000,
       reconnectPeriod: 3000,
       rejectUnauthorized: config.mqtt.rejectUnauthorized
@@ -41,9 +43,10 @@ class MqttService extends EventEmitter {
         this.emit('connected');
       });
 
-      this.client.on('message', (topic, messageBuffer) => {
+      this.client.on('message', (topic, messageBuffer, packet) => {
         const messageStr = messageBuffer.toString();
-        this.handleIncomingMessage(topic, messageStr);
+        const retained = Boolean(packet && packet.retain);
+        this.handleIncomingMessage(topic, messageStr, { retained });
       });
 
       this.client.on('error', (err) => {
@@ -54,11 +57,24 @@ class MqttService extends EventEmitter {
         this.emit('mqtt_error', err);
       });
 
+      this.client.on('offline', () => {
+        this.isConnected = false;
+        storage.setDeviceOffline();
+        this.emit('telemetry', storage.getDeviceState());
+        console.warn('⚠️ [MQTT Service] Client went offline; auto-reconnect active.');
+      });
+
+      this.client.on('reconnect', () => {
+        console.log('🔄 [MQTT Service] Reconnecting to EMQX Cloud...');
+      });
+
       this.client.on('close', () => {
         if (this.isConnected) {
           console.warn(`⚠️ [MQTT Service] Connection closed.`);
         }
         this.isConnected = false;
+        storage.setDeviceOffline();
+        this.emit('telemetry', storage.getDeviceState());
         this.emit('disconnected');
       });
 
@@ -115,7 +131,7 @@ class MqttService extends EventEmitter {
     return { deviceId: this.deviceId, topics: this.topics };
   }
 
-  handleIncomingMessage(topic, messageStr) {
+  handleIncomingMessage(topic, messageStr, { retained = false } = {}) {
     try {
       if (topic === this.topics.lwt) {
         const statusText = messageStr.trim().toLowerCase();
@@ -132,7 +148,7 @@ class MqttService extends EventEmitter {
 
       if (topic === this.topics.state) {
         const payload = JSON.parse(messageStr);
-        const updatedDevice = storage.recordTelemetry(payload);
+        const updatedDevice = storage.recordTelemetry(payload, { retained });
         // Run hardware safety & load shedding evaluations
         safetyService.evaluateTelemetry(payload, this);
         this.emit('telemetry', updatedDevice);
@@ -170,9 +186,24 @@ class MqttService extends EventEmitter {
     return err;
   }
 
+  requireDeviceConnected() {
+    const dev = storage.getDeviceState();
+    if (!this.isConnected) {
+      const err = new Error('🚫 Action rejected: Cloud MQTT broker is not connected.');
+      err.status = 503;
+      throw err;
+    }
+    if (!dev.isOnline) {
+      const err = new Error(`🚫 Action rejected: ESP32 device (${this.deviceId}) is offline! Connect a real ESP32 power strip first.`);
+      err.status = 503;
+      throw err;
+    }
+    return dev;
+  }
+
   // --- Device Safety Protected Actions (Unified Mohamed Ayman Contract Format) ---
   setOutletState(outletId, state) {
-    const dev = storage.getDeviceState();
+    const dev = this.requireDeviceConnected();
     if (state && dev.safety.isOverheatLocked) {
       throw this._createSafetyError(`🚫 Action rejected: Overheat lock is active (>65°C)!`);
     }
@@ -181,6 +212,11 @@ class MqttService extends EventEmitter {
     }
 
     const ok = this.publishCommand({ type: 'outlet', id: outletId, state: Boolean(state) });
+    if (!ok) {
+      const err = new Error('🚫 Action rejected: Failed to publish command to MQTT broker.');
+      err.status = 503;
+      throw err;
+    }
     storage.updateOutletState(outletId, state);
     storage.logEvent({
       source: 'api_backend',
@@ -192,7 +228,7 @@ class MqttService extends EventEmitter {
   }
 
   setAllOutlets(state) {
-    const dev = storage.getDeviceState();
+    const dev = this.requireDeviceConnected();
     if (state && dev.safety.isOverheatLocked) {
       throw this._createSafetyError(`🚫 Action rejected: Overheat lock is active (>65°C)!`);
     }
@@ -201,6 +237,11 @@ class MqttService extends EventEmitter {
     }
 
     const ok = this.publishCommand({ type: 'all', state: Boolean(state) });
+    if (!ok) {
+      const err = new Error('🚫 Action rejected: Failed to publish command to MQTT broker.');
+      err.status = 503;
+      throw err;
+    }
     storage.updateAllOutlets(state);
     storage.logEvent({
       source: 'api_backend',
@@ -212,6 +253,7 @@ class MqttService extends EventEmitter {
   }
 
   setSchedule(outletId, enabled, onTime, offTime) {
+    this.requireDeviceConnected();
     const ok = this.publishCommand({
       type: 'schedule',
       id: outletId,
@@ -219,6 +261,11 @@ class MqttService extends EventEmitter {
       on: onTime,
       off: offTime
     });
+    if (!ok) {
+      const err = new Error('🚫 Action rejected: Failed to publish schedule command to MQTT broker.');
+      err.status = 503;
+      throw err;
+    }
     storage.updateSchedule(outletId, { enabled: Boolean(enabled), onTime, offTime });
     storage.logEvent({
       source: 'api_backend',
@@ -230,7 +277,7 @@ class MqttService extends EventEmitter {
   }
 
   setTimer(outletId, delaySec) {
-    const dev = storage.getDeviceState();
+    const dev = this.requireDeviceConnected();
     const outlet = dev.outlets.find(o => o.id === outletId);
     const targetState = outlet ? !outlet.state : false;
 
@@ -248,6 +295,11 @@ class MqttService extends EventEmitter {
       state: targetState,
       delaySec: parsedSec
     });
+    if (!ok) {
+      const err = new Error('🚫 Action rejected: Failed to publish timer command to MQTT broker.');
+      err.status = 503;
+      throw err;
+    }
 
     storage.logEvent({
       source: 'api_backend',
@@ -258,7 +310,13 @@ class MqttService extends EventEmitter {
   }
 
   resetEnergy() {
+    this.requireDeviceConnected();
     const ok = this.publishCommand({ type: 'resetEnergy' });
+    if (!ok) {
+      const err = new Error('🚫 Action rejected: Failed to publish resetEnergy command to MQTT broker.');
+      err.status = 503;
+      throw err;
+    }
     storage.resetCumulativeEnergy();
     storage.logEvent({
       source: 'api_backend',

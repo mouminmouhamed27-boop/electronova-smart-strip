@@ -27,6 +27,7 @@ exports.processVoiceCommand = async (req, res, next) => {
     // Execute the command via MQTT
     let commandResult = null;
     let executionError = null;
+    let executionStatus = 403;
 
     try {
       if (parsed.type === 'all') {
@@ -37,12 +38,13 @@ exports.processVoiceCommand = async (req, res, next) => {
     } catch (err) {
       commandResult = null;
       executionError = err.message;
+      executionStatus = err.status || 403;
     }
 
     if (!commandResult) {
-      return res.status(403).json({
+      return res.status(executionStatus).json({
         success: false,
-        message: executionError || 'Command blocked by safety engine (Overheat or Overload)!',
+        message: executionError || 'Command blocked by safety engine or device offline!',
         parsed
       });
     }
