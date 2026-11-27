@@ -1,11 +1,12 @@
 /**
- * Application Controller (wires Store <-> Transport <-> Safety <-> Voice)
+ * Application Controller (wires Store <-> Transport <-> Safety <-> Smart Assistant Hub)
  * Zero direct DOM manipulation inside this module.
  */
 
 import { store, createInitialState } from './store.js';
 import { parseTelemetry, buildCommand } from './protocol.js';
 import { evaluateCommandSafety, isDeviceReady } from './safety.js';
+import { parseCommand } from '../voice/parser.js';
 import { loadConfig, saveConfig, resetConfig } from '../config.js';
 import { STRINGS } from '../strings.js';
 import { playConfirmBeep, playErrorBeep } from '../voice/beep.js';
@@ -58,7 +59,7 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
   function formatServerLog(evt) {
     const d = evt.details || {};
     const map = {
-      outlet_on: [`🔌 تشغيل مخرج ${d.outletId || ''}`, 'ok'],
+      outlet_on: [`🔌 تشغيل مخرج ${d.outletId || ''} (${evt.source === 'smartnest_voice' ? 'Alexa/Google' : evt.source === 'ai_voice' ? 'AI' : 'ويب'})`, 'ok'],
       outlet_off: [`🔌 فصل مخرج ${d.outletId || ''}`, 'info'],
       master_on: ['⚡ تشغيل جميع المخارج', 'ok'],
       master_off: ['🛑 فصل جميع المخارج', 'warn'],
@@ -68,13 +69,17 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
       timer_set: [`⏰ ضبط مؤقت لمخرج ${d.outletId || ''} (${d.delaySec || ''}ث)`, 'info'],
       reset_energy: ['🔄 تصفير عداد الطاقة', 'warn'],
       device_switched: [`📡 تحويل الجهاز إلى ${d.deviceId || ''}`, 'info'],
+      outlet_meta_updated: [`🏷️ تحديث اسم/حماية مخرج ${d.outletId || ''}`, 'info'],
       overheat_shutdown: [`🚨 إيقاف طوارئ للحرارة (${d.temperature || ''}°C)`, 'bad'],
       overheat_lock_released: [`✅ تبريد وفك قفل الحرارة (${d.temperature || ''}°C)`, 'ok'],
+      sensor_fault_shutdown: ['🚨 فصل طوارئ: عطل حساس الحرارة/التيار', 'bad'],
+      outlet_overcurrent_trip: [`⚡ فصل مخرج ${d.outletId || ''} (> 10A): ${d.amps || ''}A`, 'bad'],
       load_shedding: [`⚡ تخفيف حمل: فصل مخرج ${d.outletId || ''}`, 'warn'],
       safety_unlocked: ['🔓 فك قفل الأمان يدوياً', 'ok'],
       sequential_restore_complete: ['🔄 اكتمال التشغيل المتسلسل للمخارج', 'ok'],
-      online: ['🟢 ESP32 متصل (LWT)', 'ok'],
-      offline: ['🔴 ESP32 منقطع (LWT)', 'bad']
+      voice_command_blocked: [`🚫 رفض أمر أليكسا/جوجل: ${d.reason || ''}`, 'warn'],
+      online: ['🟢 ESP32 متصل', 'ok'],
+      offline: ['🔴 ESP32 منقطع', 'bad']
     };
     return map[evt.action] || [`• ${evt.action}`, 'info'];
   }
@@ -98,7 +103,6 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
     const tok = transport.getToken();
     store.patch({ token: tok });
 
-    // Load public initial history & live snapshot
     try {
       const [histRes, liveRes] = await Promise.all([
         transport.fetchHistory().catch(() => null),
@@ -116,7 +120,6 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
       }
     } catch (_) {}
 
-    // Load authenticated user, logs, & analytics
     if (tok) {
       try {
         const me = await transport.getMe();
@@ -159,6 +162,10 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
     const isOverheat = parsed.safety.isOverheatLocked;
     const wasOverload = prev.safety.isOverloadBlocked;
     const isOverload = parsed.safety.isOverloadBlocked;
+    const wasSensorFault = prev.safety.isSensorFault;
+    const isSensorFault = parsed.safety.isSensorFault;
+    const wasLatched = prev.safety.isOvercurrentLatched;
+    const isLatched = parsed.safety.isOvercurrentLatched;
 
     const shouldSkipHistory = retained && prev.history.length > 0;
     const nextHistory = shouldSkipHistory
@@ -174,15 +181,23 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
       history: nextHistory
     }));
 
+    if (!wasSensorFault && isSensorFault) {
+      addLog(`🚨 ${STRINGS.sensorFaultBanner}`, 'bad');
+      onToast?.('🚨 عطل في الحساسات — تم فصل المشترك لحين الفحص', 'bad');
+    }
+    if (!wasLatched && isLatched) {
+      addLog(`🔒 ${STRINGS.latchedBanner}`, 'bad');
+      onToast?.('🔒 قفل دائم بعد 3 فصلات تيار زائد', 'bad');
+    }
     if (!wasOverheat && isOverheat) {
       addLog(`🚨 ${STRINGS.overheatBanner}`, 'bad');
-      onToast?.('🚨 قفل حماية الحرارة (> 65°C)!', 'bad');
+      onToast?.('🚨 قفل حماية الحرارة (>= 65°C)!', 'bad');
     } else if (wasOverheat && !isOverheat) {
       addLog('✅ انخفضت الحرارة (< 60°C) وتم فك قفل الأمان', 'ok');
       onToast?.('✅ تم فك قفل الحرارة بأمان', 'ok');
     }
 
-    if (!wasOverload && isOverload) {
+    if (!wasOverload && isOverload && !isLatched) {
       addLog(`⚡ ${STRINGS.overloadBanner(parsed.safety.alert)}`, 'warn');
       onToast?.('⚡ تم تخفيف الحمل لحماية المشترك (> 16A)', 'warn');
     }
@@ -192,7 +207,7 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
     if (kind === 'lwt') {
       const statusText = String(text || '').trim().toLowerCase();
       if (statusText === 'offline') {
-        store.patch({ isOnline: false });
+        store.patch({ isOnline: false, connectionMode: 'offline' });
         addLog('🔴 انقطاع اتصال المشترك (LWT Offline)', 'bad');
       } else if (statusText === 'online' && !retained) {
         store.patch({ isOnline: true, lastHeartbeatMs: Date.now() });
@@ -219,16 +234,11 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
       deviceId: config.deviceId,
       cloudStatus: 'connecting',
       isOnline: false,
+      connectionMode: 'offline',
       lastHeartbeatMs: 0,
       history: config.transport === 'backend' ? store.getState().history : [],
       outlets: baseState.outlets,
-      safety: baseState.safety,
-      voice: {
-        ...store.getState().voice,
-        lang: config.voiceLang,
-        mode: config.voiceMode,
-        beeps: config.voiceBeeps
-      }
+      safety: baseState.safety
     });
 
     transport = createTransport(config, {
@@ -236,7 +246,6 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
         store.patch({ cloudStatus: status });
         if (status === 'connected') {
           addLog(`⚡ تم الاتصال عبر (${config.transport})`, 'ok');
-          // Auto sync on connect
           Promise.resolve(transport.publish(buildCommand({ type: 'sync' }))).catch(() => {});
         } else if (status === 'disconnected') {
           addLog(`⚠️ انقطع الاتصال بـ (${config.transport})`, 'warn');
@@ -307,7 +316,7 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
       const reason = st.cloudStatus !== 'connected'
         ? 'السحابة غير متصلة — لا يمكن التحكم حالياً.'
         : 'المشترك غير متصل بـ ESP32 حقيقي — لا يتغير أي شيء حتى يتصل الجهاز الفعلي.';
-      playErrorBeep(st.voice.beeps);
+      playErrorBeep(config.voiceBeeps !== false);
       if (shakeTarget) onShake?.(shakeTarget);
       addLog(`🚫 مرفوض: ${reason}`, 'bad');
       if (!silentToast) onToast?.(reason, 'bad');
@@ -320,7 +329,7 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
     const st = store.getState();
     const safetyCheck = evaluateCommandSafety(st.safety, Boolean(targetState), st);
     if (!safetyCheck.allowed) {
-      playErrorBeep(st.voice.beeps);
+      playErrorBeep(config.voiceBeeps !== false);
       onShake?.(shakeTarget || `outlet-${id}`);
       addLog(`🚫 مرفوض (مخرج ${id}): ${safetyCheck.reason}`, 'bad');
       if (!silentToast) onToast?.(safetyCheck.offline ? safetyCheck.reason : STRINGS.blockedToast(safetyCheck.reason), 'bad');
@@ -333,7 +342,7 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
     applyOptimisticOutlet(id, targetState);
     try {
       await transport.publish(buildCommand({ type: 'outlet', id, state: targetState }));
-      playConfirmBeep(targetState, st.voice.beeps);
+      playConfirmBeep(targetState, config.voiceBeeps !== false);
       addLog(`🔌 مخرج ${id} ← ${targetState ? 'ON' : 'OFF'}`, targetState ? 'ok' : 'info');
       return { ok: true };
     } catch (err) {
@@ -342,7 +351,7 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
         ...prev,
         outlets: prev.outlets.map((o) => (o.id === id ? { ...o, state: prevStates.get(id) } : o))
       }));
-      playErrorBeep(st.voice.beeps);
+      playErrorBeep(config.voiceBeeps !== false);
       addLog(`❌ فشل تبديل مخرج ${id}: ${err.message}`, 'bad');
       onToast?.(err.message, 'bad');
       return { ok: false, error: err.message };
@@ -353,7 +362,7 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
     const st = store.getState();
     const safetyCheck = evaluateCommandSafety(st.safety, Boolean(targetState), st);
     if (!safetyCheck.allowed) {
-      playErrorBeep(st.voice.beeps);
+      playErrorBeep(config.voiceBeeps !== false);
       onShake?.(targetState ? shakeTarget : 'master-off');
       addLog(`🚫 مرفوض (الكل): ${safetyCheck.reason}`, 'bad');
       if (!silentToast) onToast?.(safetyCheck.offline ? safetyCheck.reason : STRINGS.blockedToast(safetyCheck.reason), 'bad');
@@ -366,17 +375,44 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
     applyOptimisticAll(targetState);
     try {
       await transport.publish(buildCommand({ type: 'all', state: targetState }));
-      playConfirmBeep(targetState, st.voice.beeps);
+      playConfirmBeep(targetState, config.voiceBeeps !== false);
       addLog(targetState ? '⚡ تشغيل جميع المخارج' : '🛑 فصل جميع المخارج', targetState ? 'ok' : 'warn');
       return { ok: true };
     } catch (err) {
       clearPending([1, 2, 3, 4]);
       store.patch({ outlets: prevOutlets });
-      playErrorBeep(st.voice.beeps);
+      playErrorBeep(config.voiceBeeps !== false);
       addLog(`❌ فشل أمر الكل: ${err.message}`, 'bad');
       onToast?.(err.message, 'bad');
       return { ok: false, error: err.message };
     }
+  }
+
+  async function updateOutletMeta(id, meta) {
+    if (transport?.isBackend) {
+      if (!ensureAuthIfBackend()) return false;
+      try {
+        const res = await transport.updateOutletMeta(id, meta);
+        if (res?.outlet) {
+          store.setState((prev) => ({
+            ...prev,
+            outlets: prev.outlets.map((o) => (o.id === id ? { ...o, ...res.outlet } : o))
+          }));
+        }
+        onToast?.(`✅ تم تحديث إعدادات مخرج ${id} ومزامنتها`, 'ok');
+        addLog(`🏷️ تحديث بيانات مخرج ${id}`, 'info');
+        return true;
+      } catch (err) {
+        onToast?.(err.message, 'bad');
+        return false;
+      }
+    }
+    store.setState((prev) => ({
+      ...prev,
+      outlets: prev.outlets.map((o) => (o.id === id ? { ...o, ...meta } : o))
+    }));
+    onToast?.(`✅ تم تحديث بيانات مخرج ${id} محلياً`, 'ok');
+    return true;
   }
 
   async function setSchedule(id, enabled, onTime, offTime) {
@@ -407,7 +443,7 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
 
     const safetyCheck = evaluateCommandSafety(st.safety, targetState, st);
     if (!safetyCheck.allowed) {
-      playErrorBeep(st.voice.beeps);
+      playErrorBeep(config.voiceBeeps !== false);
       onShake?.(`outlet-${id}`);
       addLog(`🚫 مرفوض (مؤقت مخرج ${id}): ${safetyCheck.reason}`, 'bad');
       onToast?.(safetyCheck.offline ? safetyCheck.reason : STRINGS.blockedToast(safetyCheck.reason), 'bad');
@@ -442,12 +478,12 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
       }, 1000);
       timerIntervals.set(id, iv);
 
-      playConfirmBeep(true, st.voice.beeps);
+      playConfirmBeep(true, config.voiceBeeps !== false);
       addLog(`⏰ مؤقت لمخرج ${id}: ${sec} ثانية`, 'info');
       onToast?.(`⏰ تم ضبط مؤقت لمخرج ${id}`, 'ok');
       return true;
     } catch (err) {
-      playErrorBeep(st.voice.beeps);
+      playErrorBeep(config.voiceBeeps !== false);
       addLog(`❌ فشل ضبط المؤقت: ${err.message}`, 'bad');
       onToast?.(err.message, 'bad');
       return false;
@@ -499,7 +535,7 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
       const res = await transport.switchDevice(clean);
       config.deviceId = res.deviceId;
       saveConfig(config);
-      store.patch({ deviceId: res.deviceId, isOnline: false, lastHeartbeatMs: 0 });
+      store.patch({ deviceId: res.deviceId, isOnline: false, connectionMode: 'offline', lastHeartbeatMs: 0 });
       addLog(`📡 تم التحويل إلى الجهاز: ${res.deviceId}`, 'ok');
       onToast?.(`📡 تم الربط مع ${res.deviceId}`, 'ok');
       return true;
@@ -524,8 +560,8 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
     if (!ensureAuthIfBackend()) return;
     try {
       await transport.unlockSafety();
-      addLog('🔓 تم فك قفل الأمان يدوياً', 'ok');
-      onToast?.('🔓 تم فك قفل الأمان', 'ok');
+      addLog('🔓 تم فك قفل الأمان واللاتش يدوياً', 'ok');
+      onToast?.('🔓 تم فك قفل الأمان بنجاح', 'ok');
     } catch (err) {
       onToast?.(err.message, 'bad');
       addLog(`🚫 تعذر فك القفل: ${err.message}`, 'bad');
@@ -546,49 +582,80 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
     }
   }
 
-  async function executeVoiceActions(actions, heard) {
-    let anyBlocked = false;
-    let lastReason = null;
-    let anySuccess = false;
+  /**
+   * Smart AI Command Runner (replaces flaky continuous SpeechRecognition)
+   * Calls Backend /api/voice/command (Gemini AI + Safety) or local parser in non-backend mode.
+   */
+  async function executeSmartCommand(rawText) {
+    const clean = String(rawText || '').trim();
+    if (!clean) return false;
 
-    for (const act of actions) {
-      const res = act.type === 'all'
-        ? await setAll(act.state, { silentToast: true })
-        : await setOutlet(act.id, act.state, { silentToast: true });
-      if (res.blocked) {
-        anyBlocked = true;
-        lastReason = res.reason;
-      } else if (res.ok) {
-        anySuccess = true;
+    store.setState((prev) => ({
+      ...prev,
+      assistantBar: { busy: true, statusText: '⏳ جاري التحليل عبر الباك إند...', statusMode: 'working' }
+    }));
+
+    if (transport?.isBackend) {
+      if (!ensureAuthIfBackend()) {
+        store.setState((prev) => ({
+          ...prev,
+          assistantBar: { busy: false, statusText: '🔐 سجل الدخول أولاً لإرسال الأوامر الذكية', statusMode: 'bad' }
+        }));
+        return false;
+      }
+
+      try {
+        const res = await transport.sendVoiceCommand(clean, /[\u0600-\u06FF]/.test(clean) ? 'ar' : 'en');
+        playConfirmBeep(true, config.voiceBeeps !== false);
+        const prefix = res.aiPowered ? '🤖 Gemini AI' : '⚡ الأمر الذكي';
+        const reply = res.message || 'تم التنفيذ';
+        store.setState((prev) => ({
+          ...prev,
+          assistantBar: { busy: false, statusText: `${prefix}: ${reply}`, statusMode: 'ok' }
+        }));
+        addLog(`${prefix}: "${clean}" ⬅ ${reply}`, 'ok');
+        onToast?.(reply, 'ok');
+        return true;
+      } catch (err) {
+        playErrorBeep(config.voiceBeeps !== false);
+        store.setState((prev) => ({
+          ...prev,
+          assistantBar: { busy: false, statusText: `🚫 ${err.message}`, statusMode: 'bad' }
+        }));
+        addLog(`🚫 رفض الأمر الذكي: ${err.message}`, 'bad');
+        onToast?.(err.message, 'bad');
+        return false;
       }
     }
 
-    if (anyBlocked && !anySuccess) {
-      const offlineMsg = !isDeviceReady(store.getState());
+    // Local fallback when testing in Mock / MQTT direct mode
+    const parsed = parseCommand(clean, { allowFuzzy: true });
+    if (!parsed.actions.length) {
+      playErrorBeep(config.voiceBeeps !== false);
       store.setState((prev) => ({
         ...prev,
-        voice: {
-          ...prev.voice,
-          pillText: offlineMsg
-            ? `🚫 غير متصل بـ ESP32 حقيقي — لا يتغير أي مخرج`
-            : `🚫 BLOCKED (Safety Lock) — ${lastReason}`,
-          pillMode: 'bad'
-        }
+        assistantBar: { busy: false, statusText: '❓ لم يتم فهم الأمر — جرّب: شغل الراوتر أو اطفي الكل', statusMode: 'bad' }
       }));
-      onToast?.(offlineMsg ? lastReason : `🚫 ${lastReason}`, 'bad');
-    } else if (anySuccess) {
-      const summary = actions
-        .map((a) => (a.type === 'all' ? (a.state ? 'تشغيل الكل' : 'فصل الكل') : `مخرج ${a.id} ${a.state ? 'ON' : 'OFF'}`))
-        .join(' • ');
-      store.setState((prev) => ({
-        ...prev,
-        voice: {
-          ...prev.voice,
-          pillText: `✅ "${heard}" ⬅ ${summary}`,
-          pillMode: 'ok'
-        }
-      }));
+      return false;
     }
+
+    let okCount = 0;
+    let lastErr = '';
+    for (const act of parsed.actions) {
+      const r = act.type === 'all' ? await setAll(act.state, { silentToast: true }) : await setOutlet(act.id, act.state, { silentToast: true });
+      if (r.ok) okCount++;
+      else lastErr = r.reason || r.error || 'تعذر التنفيذ';
+    }
+
+    store.setState((prev) => ({
+      ...prev,
+      assistantBar: {
+        busy: false,
+        statusText: okCount > 0 ? `✅ تم تنفيذ "${clean}"` : `🚫 ${lastErr}`,
+        statusMode: okCount > 0 ? 'ok' : 'bad'
+      }
+    }));
+    return okCount > 0;
   }
 
   async function login(email, password) {
@@ -608,7 +675,7 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
     transport.setToken(res.token);
     store.patch({ user: res.user, token: res.token });
     addLog(`✅ تم إنشاء الحساب: ${res.user.name}`, 'ok');
-    onToast?.(`تم إنشاء الحساب بنجاح`, 'ok');
+    onToast?.('تم إنشاء الحساب بنجاح', 'ok');
     loadBackendLogsAndAnalytics();
     return res;
   }
@@ -649,32 +716,21 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
   function setVoiceConfig(partialVoice) {
     config = { ...config, ...partialVoice };
     saveConfig(config);
-    store.setState((prev) => ({
-      ...prev,
-      voice: {
-        ...prev.voice,
-        lang: config.voiceLang,
-        mode: config.voiceMode,
-        beeps: config.voiceBeeps
-      }
-    }));
   }
 
   function start() {
     applyTheme(config.theme);
     connectTransport();
 
-    // Heartbeat Watchdog (> 20s silent non-retained -> offline)
     clearInterval(watchdogTimer);
     watchdogTimer = setInterval(() => {
       const st = store.getState();
       if (st.isOnline && st.lastHeartbeatMs > 0 && Date.now() - st.lastHeartbeatMs > 20000) {
-        store.patch({ isOnline: false });
+        store.patch({ isOnline: false, connectionMode: 'offline' });
         addLog('⚠️ انتهى نبض الـ ESP32 (> 20 ثانية)', 'warn');
       }
     }, 2000);
 
-    // Cairo clock fallback tick every second
     clearInterval(clockTimer);
     clockTimer = setInterval(() => {
       const st = store.getState();
@@ -683,7 +739,6 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
       }
     }, 1000);
 
-    // Sync when tab returns visible
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && transport?.isConnected()) {
         requestSync();
@@ -702,6 +757,7 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
     setVoiceConfig,
     setOutlet,
     setAll,
+    updateOutletMeta,
     setSchedule,
     setTimer,
     resetEnergy,
@@ -709,7 +765,7 @@ export function createController({ createTransport, onToast, onShake, onAuthRequ
     switchDevice,
     unlockSafety,
     sequentialRestore,
-    executeVoiceActions,
+    executeSmartCommand,
     login,
     register,
     logout,

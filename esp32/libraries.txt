@@ -1,15 +1,17 @@
-# ESP32 Libraries Required
+# ESP32 Libraries Required (Arduino IDE -> Library Manager)
 
-## Install via Arduino IDE → Sketch → Include Library → Manage Libraries
+| Library | Version | Author / Search Name | Purpose |
+|---|---|---|---|
+| `WebSockets` | >= 2.4 | `WebSockets` by Markus Sattler (Links2004) | Secure WSS on Port 443 (`/ws/device`) |
+| `ArduinoJson` | >= 7.x | `ArduinoJson` by Benoit Blanchon | JSON telemetry & command parsing |
+| `OneWire` | >= 2.3 | `OneWire` by Paul Stoffregen | 1-Wire bus for DS18B20 |
+| `DallasTemperature` | >= 3.9 | `DallasTemperature` by Miles Burton | Non-blocking DS18B20 temperature readout |
 
-| Library | Version | Install Name |
-|---------|---------|--------------|
-| PubSubClient | ≥ 2.8 | `PubSubClient` by Nick O'Leary |
-| ArduinoJson | ≥ 7.x | `ArduinoJson` by Benoit Blanchon |
+Built-in ESP32 Core libraries (already included):
+- `WiFi`, `WiFiClientSecure`, `WebServer`, `HTTPUpdate`, `ArduinoOTA`, `Preferences`, `time.h`, `esp_task_wdt.h`
 
 ## Board Setup (Arduino IDE)
-1. File → Preferences → Additional Boards Manager URLs:
+1. Boards Manager URL:
    `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
-2. Tools → Board → Boards Manager → search `esp32` → install **esp32 by Espressif Systems**
-3. Tools → Board → ESP32 Arduino → **ESP32 Dev Module**
-4. Tools → Upload Speed → **115200**
+2. Board: **ESP32 Dev Module** (compiles cleanly on both ESP32 Arduino Core 2.x and 3.x)
+3. Upload Speed: **115200**

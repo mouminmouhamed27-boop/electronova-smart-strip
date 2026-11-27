@@ -6,12 +6,40 @@ exports.getOutlets = (req, res) => {
   const dev = storage.getDeviceState();
   res.json({
     success: true,
+    isOnline: dev.isOnline,
+    connectionMode: dev.connectionMode || 'offline',
     outlets: dev.outlets,
     safety: dev.safety
   });
 };
 
-exports.setOutlet = (req, res, next) => {
+exports.updateOutletMeta = (req, res) => {
+  const outletId = parseOutletId(req.params.id);
+  if (!outletId) {
+    return res.status(400).json({ success: false, message: 'Invalid outlet ID (1-4).' });
+  }
+
+  const { name, priority, isProtected } = req.body || {};
+  const updated = storage.updateOutletMeta(outletId, { name, priority, isProtected });
+  if (!updated) {
+    return res.status(404).json({ success: false, message: 'Outlet not found.' });
+  }
+
+  storage.logEvent({
+    source: 'api_backend',
+    action: 'outlet_meta_updated',
+    details: { outletId, name: updated.name, priority: updated.priority, isProtected: updated.isProtected }
+  });
+  mqtt.emit('telemetry', storage.getDeviceState());
+
+  return res.json({
+    success: true,
+    message: `Outlet ${outletId} metadata updated & synced.`,
+    outlet: updated
+  });
+};
+
+exports.setOutlet = (req, res) => {
   try {
     const outletId = parseOutletId(req.params.id);
     if (!outletId) {
@@ -29,7 +57,7 @@ exports.setOutlet = (req, res, next) => {
       success: true,
       mqttDispatched: result.mqttDispatched,
       message: `Outlet ${outletId} set to ${parsedState ? 'ON' : 'OFF'}`,
-      outlet: storage.getDeviceState().outlets.find(o => o.id === outletId)
+      outlet: storage.getDeviceState().outlets.find((o) => o.id === outletId)
     });
   } catch (err) {
     res.status(err.status || 403).json({
@@ -39,7 +67,7 @@ exports.setOutlet = (req, res, next) => {
   }
 };
 
-exports.setMasterAll = (req, res, next) => {
+exports.setMasterAll = (req, res) => {
   try {
     const parsedState = parseBooleanStrict(req.body?.state);
     if (parsedState === null) {
@@ -62,7 +90,7 @@ exports.setMasterAll = (req, res, next) => {
   }
 };
 
-exports.setTimer = (req, res, next) => {
+exports.setTimer = (req, res) => {
   try {
     const outletId = parseOutletId(req.params.id);
     if (!outletId) {

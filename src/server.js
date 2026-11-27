@@ -3,18 +3,20 @@ const { WebSocketServer } = require('ws');
 const app = require('./app');
 const config = require('./config');
 const mqttService = require('./services/mqttService');
+const deviceGateway = require('./services/deviceGateway');
+const smartnestBridge = require('./services/smartnestBridgeService');
 const storage = require('./services/storageService');
 const cronService = require('./services/cronService');
 const keepAliveService = require('./services/keepAliveService');
 
 const server = http.createServer(app);
 
-// WebSocket Server for zero-latency live telemetry push to Flutter/Browser
-const wss = new WebSocketServer({ server, path: '/ws/telemetry' });
+// WebSocket Server for zero-latency live telemetry push to Mobile App & Browser
+const wss = new WebSocketServer({ noServer: true });
 
 wss.on('connection', (ws) => {
   ws.isAlive = true;
-  console.log('🔗 [WebSocket] Client connected to live telemetry stream.');
+  console.log('🔗 [WebSocket] Client connected to /ws/telemetry stream.');
 
   ws.on('pong', () => {
     ws.isAlive = true;
@@ -38,13 +40,35 @@ wss.on('connection', (ws) => {
   try {
     ws.send(JSON.stringify({
       type: 'init',
-      data: storage.getDeviceState()
+      data: {
+        ...storage.getDeviceState(),
+        connectionMode: mqttService.getConnectionMode(),
+        assistants: smartnestBridge.getStatus()
+      }
     }));
   } catch (_) {}
 
   ws.on('close', () => {
-    console.log('🔌 [WebSocket] Client disconnected.');
+    console.log('🔌 [WebSocket] Telemetry client disconnected.');
   });
+});
+
+// Route WebSocket upgrades cleanly between Dashboard/App (/ws/telemetry) & ESP32 (/ws/device)
+server.on('upgrade', (req, socket, head) => {
+  try {
+    const pathname = new URL(req.url, `http://${req.headers.host || 'localhost'}`).pathname;
+    if (pathname === '/ws/telemetry') {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit('connection', ws, req);
+      });
+      return;
+    }
+    if (pathname === '/ws/device') {
+      deviceGateway.handleUpgrade(req, socket, head);
+      return;
+    }
+  } catch (_) {}
+  socket.destroy();
 });
 
 // Keepalive heartbeat prevents reverse-proxy (Railway) idle WebSocket drops
@@ -62,15 +86,19 @@ const wsHeartbeat = setInterval(() => {
 
 wss.on('close', () => clearInterval(wsHeartbeat));
 
-// Broadcast live telemetry updates received from MQTT to all connected WebSockets
+// Broadcast live telemetry updates to all Web + Mobile WebSocket clients
 mqttService.on('telemetry', (deviceState) => {
   const payload = JSON.stringify({
     type: 'telemetry_update',
-    data: deviceState
+    data: {
+      ...deviceState,
+      connectionMode: mqttService.getConnectionMode(),
+      assistants: smartnestBridge.getStatus()
+    }
   });
 
   wss.clients.forEach((client) => {
-    if (client.readyState === 1) { // 1 = OPEN
+    if (client.readyState === 1) {
       try {
         client.send(payload);
       } catch (_) {}
@@ -82,7 +110,48 @@ mqttService.on('error', (err) => {
   console.error('⚠️ [Server] Non-fatal MQTT error (server stays online):', err.message);
 });
 
-// Start Server, MQTT Connection & Cron Automation Engine
+// Wire ESP32 Device Gateway (/ws/device over Port 443)
+deviceGateway.init({
+  onConnectDevice: (deviceId, ws) => {
+    if (deviceId === mqttService.deviceId) {
+      storage.setDeviceOnline('ws');
+      storage.logEvent({ source: 'esp32_ws', action: 'online', details: `ESP32 (${deviceId}) connected on /ws/device (Port 443)` });
+      smartnestBridge.syncFullState({ force: true });
+      mqttService.emit('telemetry', storage.getDeviceState());
+    }
+    // Push server-synced schedules & thresholds immediately on boot/reconnect
+    const dev = storage.getDeviceState();
+    try {
+      ws.send(JSON.stringify({
+        type: 'config',
+        tariffEgp: dev.tariffEgp,
+        schedules: dev.schedules
+      }));
+      ws.send(JSON.stringify({ type: 'sync' }));
+    } catch (_) {}
+  },
+  onDisconnectDevice: (deviceId) => {
+    if (deviceId === mqttService.deviceId && !mqttService.isConnected) {
+      storage.setDeviceOffline();
+      storage.logEvent({ source: 'esp32_ws', action: 'offline', details: `ESP32 (${deviceId}) WebSocket disconnected` });
+      smartnestBridge.syncFullState({ force: true });
+      mqttService.emit('telemetry', storage.getDeviceState());
+    }
+  },
+  onTelemetry: (deviceId, payload, mode) => {
+    if (deviceId !== mqttService.deviceId) return;
+    mqttService.handleDeviceTelemetry(payload, { retained: false, connectionMode: mode || 'ws' });
+  },
+  onDeviceEvent: (deviceId, msg) => {
+    storage.logEvent({
+      source: 'esp32_ws',
+      action: msg.action || 'device_event',
+      details: msg.details || msg
+    });
+  }
+});
+
+// Start Server, MQTT, Smartnest Cloud Bridge, Cron Scheduler & Keep-Alive
 server.listen(config.port, () => {
   console.log(`
 ======================================================
@@ -90,19 +159,16 @@ server.listen(config.port, () => {
 ======================================================
 📡 HTTP API:        http://localhost:${config.port}/api
 📖 Swagger UI Docs: http://localhost:${config.port}/api-docs
-🌐 WebSocket Stream: ws://localhost:${config.port}/ws/telemetry
+🌐 App/Web WS:      ws://localhost:${config.port}/ws/telemetry
+🔌 ESP32 Device WS: ws://localhost:${config.port}/ws/device
 ⚙️ Environment:     ${config.nodeEnv} (${config.timezone})
 🎓 Team:            Al-Azhar University Engineering
 ======================================================
   `);
 
-  // Connect to MQTT Broker
   mqttService.connect();
-
-  // Start Cron Scheduler
+  smartnestBridge.start({ deviceRouter: mqttService, storage });
   cronService.start();
-
-  // Start HTTP Self Keep-Alive Monitor
   keepAliveService.start();
 });
 
@@ -111,6 +177,8 @@ function gracefulShutdown(signal) {
   clearInterval(wsHeartbeat);
   keepAliveService.stop();
   cronService.stop();
+  smartnestBridge.stop();
+  deviceGateway.stop();
   mqttService.disconnect();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 5000).unref();

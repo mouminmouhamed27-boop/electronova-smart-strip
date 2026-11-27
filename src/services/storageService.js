@@ -27,13 +27,22 @@ const defaultData = {
     id: config.mqtt.deviceId || 'EN_SIM1',
     name: 'المشترك الذكي - هندسة الأزهر',
     isOnline: false,
+    connectionMode: 'offline', // 'ws' | 'mqtt' | 'offline'
     lastHeartbeat: null,
     tariffEgp: config.defaultTariffEgp || 1.25,
+    diagnostics: {
+      ip: null,
+      rssi: null,
+      firmwareVersion: null,
+      bootSelfTest: null,
+      lastTripReason: null,
+      overcurrentTrips: 0
+    },
     outlets: [
-      { id: 1, name: 'راوتر / جهاز أساسي', priority: 1, state: false, currentAmps: 0.0, currentWatts: 0, totalKwh: 0.000 },
-      { id: 2, name: 'كمبيوتر / محطة عمل', priority: 2, state: false, currentAmps: 0.0, currentWatts: 0, totalKwh: 0.000 },
-      { id: 3, name: 'إضاءة المعمل / طرفيات', priority: 3, state: false, currentAmps: 0.0, currentWatts: 0, totalKwh: 0.000 },
-      { id: 4, name: 'أحمال غير حرجة / شواحن', priority: 4, state: false, currentAmps: 0.0, currentWatts: 0, totalKwh: 0.000 }
+      { id: 1, name: 'راوتر / جهاز أساسي', priority: 1, isProtected: true, state: false, currentAmps: 0.0, currentWatts: 0, totalKwh: 0.000 },
+      { id: 2, name: 'كمبيوتر / محطة عمل', priority: 2, isProtected: false, state: false, currentAmps: 0.0, currentWatts: 0, totalKwh: 0.000 },
+      { id: 3, name: 'إضاءة المعمل / طرفيات', priority: 3, isProtected: false, state: false, currentAmps: 0.0, currentWatts: 0, totalKwh: 0.000 },
+      { id: 4, name: 'أحمال غير حرجة / شواحن', priority: 4, isProtected: false, state: false, currentAmps: 0.0, currentWatts: 0, totalKwh: 0.000 }
     ],
     safety: {
       temperatureC: 25.0,
@@ -44,6 +53,12 @@ const defaultData = {
       costEgp: 0.00,
       isOverheatLocked: false,
       isOverloadBlocked: false,
+      isOvercurrentLatched: false,
+      isSensorFault: false,
+      isTempSensorFault: false,
+      isCurrentSensorFault: false,
+      overcurrentTrips: 0,
+      lastTripReason: null,
       isContinuousWarning: false,
       isVoltageFault: false,
       alert: 'OK'
@@ -79,11 +94,24 @@ class StorageService {
         if (parsed.device) {
           parsed.device.id = parsed.device.id || config.mqtt.deviceId || 'EN_SIM1';
           parsed.device.isOnline = false;
+          parsed.device.connectionMode = 'offline';
           parsed.device.tariffEgp = config.defaultTariffEgp || parsed.device.tariffEgp || 1.25;
+          parsed.device.diagnostics = {
+            ...defaultData.device.diagnostics,
+            ...(parsed.device.diagnostics || {})
+          };
+          if (Array.isArray(parsed.device.outlets)) {
+            parsed.device.outlets = parsed.device.outlets.map((o, idx) => ({
+              ...defaultData.device.outlets[idx],
+              ...o,
+              isProtected: o.isProtected !== undefined ? Boolean(o.isProtected) : idx === 0
+            }));
+          }
           if (parsed.device.safety) {
-            if (parsed.device.safety.volts === undefined) parsed.device.safety.volts = 220.0;
-            if (parsed.device.safety.isContinuousWarning === undefined) parsed.device.safety.isContinuousWarning = false;
-            if (parsed.device.safety.isVoltageFault === undefined) parsed.device.safety.isVoltageFault = false;
+            parsed.device.safety = {
+              ...defaultData.device.safety,
+              ...parsed.device.safety
+            };
           }
         }
         return parsed;
@@ -107,11 +135,11 @@ class StorageService {
   findUserByEmail(email) {
     if (typeof email !== 'string') return undefined;
     const normalized = email.trim().toLowerCase();
-    return this.data.users.find(u => u.email.toLowerCase() === normalized);
+    return this.data.users.find((u) => u.email.toLowerCase() === normalized);
   }
 
   findUserById(id) {
-    return this.data.users.find(u => u.id === id);
+    return this.data.users.find((u) => u.id === id);
   }
 
   createUser(user) {
@@ -129,12 +157,13 @@ class StorageService {
     if (!newId) return this.data.device;
     this.data.device.id = String(newId).trim();
     this.data.device.isOnline = false;
+    this.data.device.connectionMode = 'offline';
     this.saveData();
     return this.data.device;
   }
 
   updateOutletState(outletId, state) {
-    const outlet = this.data.device.outlets.find(o => o.id === outletId);
+    const outlet = this.data.device.outlets.find((o) => o.id === outletId);
     if (outlet) {
       outlet.state = Boolean(state);
       if (!outlet.state) {
@@ -146,9 +175,28 @@ class StorageService {
     return outlet;
   }
 
+  updateOutletMeta(outletId, { name, priority, isProtected }) {
+    const outlet = this.data.device.outlets.find((o) => o.id === outletId);
+    if (!outlet) return null;
+    if (typeof name === 'string' && name.trim()) {
+      outlet.name = name.trim().slice(0, 60);
+    }
+    if (priority !== undefined) {
+      const p = parseInt(priority, 10);
+      if (Number.isInteger(p) && p >= 1 && p <= 4) {
+        outlet.priority = p;
+      }
+    }
+    if (isProtected !== undefined) {
+      outlet.isProtected = Boolean(isProtected);
+    }
+    this.saveData();
+    return outlet;
+  }
+
   updateAllOutlets(state) {
     const boolState = Boolean(state);
-    this.data.device.outlets.forEach(o => {
+    this.data.device.outlets.forEach((o) => {
       o.state = boolState;
       if (!boolState) {
         o.currentAmps = 0.0;
@@ -160,7 +208,7 @@ class StorageService {
   }
 
   updateSchedule(outletId, scheduleData) {
-    let sch = this.data.device.schedules.find(s => s.outletId === outletId);
+    let sch = this.data.device.schedules.find((s) => s.outletId === outletId);
     if (!sch) {
       sch = { outletId, ...scheduleData };
       this.data.device.schedules.push(sch);
@@ -174,21 +222,37 @@ class StorageService {
   resetCumulativeEnergy() {
     this.data.device.safety.totalKwh = 0.000;
     this.data.device.safety.costEgp = 0.00;
-    this.data.device.outlets.forEach(o => {
+    this.data.device.outlets.forEach((o) => {
       o.totalKwh = 0.000;
     });
     this.lastEnergyTickMs = Date.now();
     this.saveData();
   }
 
-  // --- Telemetry Processing (Supports Unified Contract + Legacy v4.0/v4.1 Payloads) ---
-  recordTelemetry(payload, { retained = false } = {}) {
+  // --- Telemetry Processing (Unified WS/MQTT + Legacy v4.0/v4.1 Payloads) ---
+  recordTelemetry(payload, { retained = false, connectionMode = null } = {}) {
     const dev = this.data.device;
     const nowMs = Date.now();
     const prevOverheatLocked = Boolean(dev.safety.isOverheatLocked);
+
     if (!retained) {
       dev.isOnline = true;
+      if (connectionMode) dev.connectionMode = connectionMode;
       dev.lastHeartbeat = new Date(nowMs).toISOString();
+    }
+
+    // 0. Optional Diagnostics from ESP32
+    if (payload.ip !== undefined) dev.diagnostics.ip = payload.ip || null;
+    if (payload.rssi !== undefined) dev.diagnostics.rssi = toFiniteNumber(payload.rssi);
+    if (payload.firmwareVersion || payload.firmware) {
+      dev.diagnostics.firmwareVersion = String(payload.firmwareVersion || payload.firmware);
+    }
+    if (payload.bootSelfTest !== undefined) {
+      dev.diagnostics.bootSelfTest = Boolean(payload.bootSelfTest);
+    }
+    if (payload.lastTripReason !== undefined) {
+      dev.diagnostics.lastTripReason = payload.lastTripReason || null;
+      dev.safety.lastTripReason = dev.diagnostics.lastTripReason;
     }
 
     // 1. Temperature (Unified: temp | Legacy: t, temp_c)
@@ -206,27 +270,13 @@ class StorageService {
     }
     const lineVolts = toFiniteNumber(dev.safety.volts) ?? 220.0;
 
-    // 3. Total Amps & Watts (Unified: amps, watts | Legacy: ta, total_amps, w, total_w)
-    const ampsVal = toFiniteNumber(
-      payload.amps !== undefined ? payload.amps : (payload.ta !== undefined ? payload.ta : payload.total_amps)
-    );
-    if (ampsVal !== null && ampsVal >= 0) {
-      dev.safety.totalAmps = ampsVal;
-    }
-
-    const wattsVal = toFiniteNumber(
-      payload.watts !== undefined ? payload.watts : (payload.w !== undefined ? payload.w : payload.total_w)
-    );
-    if (wattsVal !== null && wattsVal >= 0) {
-      dev.safety.totalWatts = Math.round(wattsVal);
-    } else if (ampsVal !== null && ampsVal >= 0) {
-      dev.safety.totalWatts = Math.round(dev.safety.totalAmps * lineVolts);
-    }
-
-    // 4. Outlets (Unified: outlets[] | Legacy: s[], a[], k[])
+    // 3. Per-outlet Amps & Total Amps/Watts (supports 4 individual ACS712 sensors!)
     const outletStatesArr = Array.isArray(payload.outlets) ? payload.outlets : (Array.isArray(payload.s) ? payload.s : null);
     const outletAmpsArr = Array.isArray(payload.outletAmps) ? payload.outletAmps : (Array.isArray(payload.a) ? payload.a : null);
     const outletKwhArr = Array.isArray(payload.outletKwh) ? payload.outletKwh : (Array.isArray(payload.k) ? payload.k : null);
+
+    let sumOutletAmps = 0;
+    let hasPerOutletAmps = false;
 
     if (outletStatesArr) {
       outletStatesArr.forEach((st, idx) => {
@@ -234,8 +284,11 @@ class StorageService {
           dev.outlets[idx].state = parseOutletFlag(st);
           const perAmps = outletAmpsArr ? toFiniteNumber(outletAmpsArr[idx]) : null;
           if (perAmps !== null && perAmps >= 0) {
-            dev.outlets[idx].currentAmps = perAmps;
-            dev.outlets[idx].currentWatts = Math.round(perAmps * lineVolts);
+            hasPerOutletAmps = true;
+            const activeAmps = dev.outlets[idx].state ? perAmps : 0.0;
+            dev.outlets[idx].currentAmps = activeAmps;
+            dev.outlets[idx].currentWatts = Math.round(activeAmps * lineVolts);
+            sumOutletAmps += activeAmps;
           } else if (!dev.outlets[idx].state) {
             dev.outlets[idx].currentAmps = 0.0;
             dev.outlets[idx].currentWatts = 0;
@@ -246,9 +299,38 @@ class StorageService {
           }
         }
       });
+    } else if (outletAmpsArr) {
+      outletAmpsArr.forEach((ampRaw, idx) => {
+        const perAmps = toFiniteNumber(ampRaw);
+        if (dev.outlets[idx] && perAmps !== null && perAmps >= 0) {
+          hasPerOutletAmps = true;
+          const activeAmps = dev.outlets[idx].state ? perAmps : 0.0;
+          dev.outlets[idx].currentAmps = activeAmps;
+          dev.outlets[idx].currentWatts = Math.round(activeAmps * lineVolts);
+          sumOutletAmps += activeAmps;
+        }
+      });
     }
 
-    // 5. Energy & Cost (Explicit from ESP32 or calculated incrementally by Backend)
+    const ampsVal = toFiniteNumber(
+      payload.amps !== undefined ? payload.amps : (payload.ta !== undefined ? payload.ta : payload.total_amps)
+    );
+    if (ampsVal !== null && ampsVal >= 0) {
+      dev.safety.totalAmps = ampsVal;
+    } else if (hasPerOutletAmps) {
+      dev.safety.totalAmps = parseFloat(sumOutletAmps.toFixed(2));
+    }
+
+    const wattsVal = toFiniteNumber(
+      payload.watts !== undefined ? payload.watts : (payload.w !== undefined ? payload.w : payload.total_w)
+    );
+    if (wattsVal !== null && wattsVal >= 0) {
+      dev.safety.totalWatts = Math.round(wattsVal);
+    } else {
+      dev.safety.totalWatts = Math.round(dev.safety.totalAmps * lineVolts);
+    }
+
+    // 4. Energy & Cost
     const kwhVal = toFiniteNumber(
       payload.kwh !== undefined ? payload.kwh : (payload.tk !== undefined ? payload.tk : payload.total_kwh)
     );
@@ -259,16 +341,15 @@ class StorageService {
     if (kwhVal !== null && kwhVal >= 0) {
       dev.safety.totalKwh = kwhVal;
     } else if (this.lastEnergyTickMs !== null && dev.safety.totalWatts > 0) {
-      const dtHours = Math.min((nowMs - this.lastEnergyTickMs) / 3600000.0, 0.05); // cap interval to avoid jump after long offline gap
+      const dtHours = Math.min((nowMs - this.lastEnergyTickMs) / 3600000.0, 0.05);
       const deltaKwh = (dev.safety.totalWatts / 1000.0) * dtHours;
       dev.safety.totalKwh = parseFloat((dev.safety.totalKwh + deltaKwh).toFixed(5));
 
-      // Distribute delta proportionally by per-outlet watts when available, else split equally among active outlets
       if (!outletKwhArr) {
-        const activeOutlets = dev.outlets.filter(o => o.state);
+        const activeOutlets = dev.outlets.filter((o) => o.state);
         if (activeOutlets.length > 0) {
           const activeWattsSum = activeOutlets.reduce((sum, o) => sum + (o.currentWatts || 0), 0);
-          activeOutlets.forEach(o => {
+          activeOutlets.forEach((o) => {
             const shareRatio = activeWattsSum > 0
               ? ((o.currentWatts || 0) / activeWattsSum)
               : (1 / activeOutlets.length);
@@ -286,18 +367,43 @@ class StorageService {
       dev.safety.costEgp = parseFloat((dev.safety.totalKwh * tariff).toFixed(2));
     }
 
-    // 6. Alert Synchronization (Keep prior overheat lock so safetyService evaluates <60°C release & logs it)
+    // 5. Hardware Safety & Fault Flags
     const alertVal = String(payload.alert || payload.al || 'OK').trim() || 'OK';
     const isOverheatAlert = alertVal === 'OVERHEAT' || alertVal === 'OVERHEAT_SHUTDOWN';
-    const isOverloadAlert = alertVal === 'OVERLOAD' || alertVal.startsWith('LOAD_SHEDDING');
+    const isOverloadAlert = alertVal === 'OVERLOAD' || alertVal.startsWith('LOAD_SHEDDING') || alertVal === 'OUTLET_OVERCURRENT';
+    const isLatchedAlert = alertVal === 'OVERCURRENT_LATCHED' || Boolean(payload.overcurrentLatched);
+    const isTempFault = Boolean(payload.tempSensorFault);
+    const isCurrFault = Boolean(payload.currentSensorFault);
+    const isAnySensorFault = alertVal === 'SENSOR_FAULT' || Boolean(payload.sensorFault) || isTempFault || isCurrFault;
 
-    dev.safety.isOverheatLocked = isOverheatAlert || prevOverheatLocked;
-    dev.safety.alert = dev.safety.isOverheatLocked && !isOverheatAlert ? 'OVERHEAT' : alertVal;
-    dev.safety.isOverloadBlocked = isOverloadAlert || dev.safety.totalAmps > 16.0;
+    dev.safety.isOverheatLocked = isOverheatAlert || Boolean(payload.thermalCut) || prevOverheatLocked;
+    dev.safety.isOvercurrentLatched = isLatchedAlert;
+    if (payload.overcurrentTrips !== undefined) {
+      const trips = toFiniteNumber(payload.overcurrentTrips);
+      if (trips !== null && trips >= 0) {
+        dev.safety.overcurrentTrips = trips;
+        dev.diagnostics.overcurrentTrips = trips;
+      }
+    }
+    dev.safety.isTempSensorFault = isTempFault;
+    dev.safety.isCurrentSensorFault = isCurrFault;
+    dev.safety.isSensorFault = isAnySensorFault;
+
+    if (isAnySensorFault) {
+      dev.safety.alert = 'SENSOR_FAULT';
+    } else if (isLatchedAlert) {
+      dev.safety.alert = 'OVERCURRENT_LATCHED';
+    } else if (dev.safety.isOverheatLocked && !isOverheatAlert) {
+      dev.safety.alert = 'OVERHEAT';
+    } else {
+      dev.safety.alert = alertVal;
+    }
+
+    dev.safety.isOverloadBlocked = isOverloadAlert || isLatchedAlert || dev.safety.totalAmps > 16.0;
     dev.safety.isContinuousWarning = dev.safety.totalAmps >= 12.8;
     dev.safety.isVoltageFault = lineVolts < 190.0 || lineVolts > 250.0;
 
-    // 7. Schedules sync if included in legacy packets
+    // 6. Schedules sync if included
     if (Array.isArray(payload.sch)) {
       payload.sch.forEach((item, idx) => {
         if (Array.isArray(item) && dev.schedules[idx]) {
@@ -333,14 +439,16 @@ class StorageService {
     }
   }
 
-  setDeviceOnline() {
+  setDeviceOnline(connectionMode = null) {
     this.data.device.isOnline = true;
+    if (connectionMode) this.data.device.connectionMode = connectionMode;
     this.data.device.lastHeartbeat = new Date().toISOString();
     this.saveData();
   }
 
   setDeviceOffline() {
     this.data.device.isOnline = false;
+    this.data.device.connectionMode = 'offline';
     this.saveData();
   }
 

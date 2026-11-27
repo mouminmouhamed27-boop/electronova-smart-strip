@@ -709,6 +709,58 @@
   animation: pulseMic 1.4s infinite;
 }
 
+.voice-mic-btn.live-ok {
+  background: var(--accent-2-bg);
+  border-color: var(--accent-2-border);
+  color: var(--accent-2);
+}
+
+.assistant-form {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.assistant-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.assistant-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.assistant-status {
+  display: none;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 190px;
+}
+
+@media (min-width: 720px) {
+  .assistant-status {
+    display: inline-block;
+  }
+}
+
+.assistant-status.working { color: var(--accent); }
+.assistant-status.ok { color: var(--accent-2); }
+.assistant-status.bad { color: var(--danger); }
+
 .voice-mic-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;

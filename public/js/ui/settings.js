@@ -34,7 +34,6 @@ const MQTT_PRESETS = {
 export function initSettingsAndModals(controller, { showToast }) {
   let authMode = 'login';
 
-  // Elements
   const authModal = document.getElementById('authModal');
   const deviceModal = document.getElementById('deviceModal');
   const resetModal = document.getElementById('resetEnergyModal');
@@ -52,7 +51,6 @@ export function initSettingsAndModals(controller, { showToast }) {
     if (e.key === 'Escape') closeAllModals();
   });
 
-  // ── Auth Modal Logic ──
   function setAuthTab(mode) {
     authMode = mode === 'register' ? 'register' : 'login';
     const isReg = authMode === 'register';
@@ -110,7 +108,6 @@ export function initSettingsAndModals(controller, { showToast }) {
     }
   });
 
-  // ── Device ID Modal Logic ──
   function openDeviceModal() {
     const errBox = document.getElementById('deviceFormError');
     errBox?.classList.add('hidden');
@@ -140,7 +137,6 @@ export function initSettingsAndModals(controller, { showToast }) {
     }
   });
 
-  // ── Reset Energy Modal Logic ──
   function openResetModal() {
     const st = store.getState();
     const preview = document.getElementById('resetPreviewVal');
@@ -158,7 +154,6 @@ export function initSettingsAndModals(controller, { showToast }) {
     if (ok) closeModal(resetModal);
   });
 
-  // ── Settings Form Sync & Actions ──
   const cfgTransport = document.getElementById('cfgTransport');
   const mqttWrap = document.getElementById('mqttSettingsFields');
   const wsWrap = document.getElementById('wsSettingsFields');
@@ -182,9 +177,8 @@ export function initSettingsAndModals(controller, { showToast }) {
     document.getElementById('cfgMqttSsl').checked = cfg.mqtt.ssl !== false;
     document.getElementById('cfgWsUrl').value = cfg.ws.url || '';
     document.getElementById('cfgWsToken').value = cfg.ws.token || '';
-    document.getElementById('cfgVoiceLang').value = cfg.voiceLang || 'ar-EG';
-    document.getElementById('cfgVoiceMode').value = cfg.voiceMode || 'instant';
-    document.getElementById('cfgVoiceBeeps').checked = cfg.voiceBeeps !== false;
+    const beepsEl = document.getElementById('cfgVoiceBeeps');
+    if (beepsEl) beepsEl.checked = cfg.voiceBeeps !== false;
     syncTransportFieldsVisibility();
   }
 
@@ -225,9 +219,7 @@ export function initSettingsAndModals(controller, { showToast }) {
         url: document.getElementById('cfgWsUrl').value.trim(),
         token: document.getElementById('cfgWsToken').value.trim()
       },
-      voiceLang: document.getElementById('cfgVoiceLang').value,
-      voiceMode: document.getElementById('cfgVoiceMode').value,
-      voiceBeeps: document.getElementById('cfgVoiceBeeps').checked
+      voiceBeeps: document.getElementById('cfgVoiceBeeps')?.checked ?? true
     });
     showToast('✅ تم حفظ الإعدادات وإعادة الاتصال', 'ok');
   });
@@ -247,19 +239,13 @@ export function initSettingsAndModals(controller, { showToast }) {
     }
   });
 
-  document.getElementById('cfgVoiceMode')?.addEventListener('change', (e) => {
-    controller.setVoiceConfig({ voiceMode: e.target.value });
-  });
-
   document.getElementById('cfgVoiceBeeps')?.addEventListener('change', (e) => {
     controller.setVoiceConfig({ voiceBeeps: e.target.checked });
   });
 
-  // Theme toggles (Topbar + Settings)
   document.getElementById('btnThemeTopbar')?.addEventListener('click', () => controller.toggleTheme());
   document.getElementById('btnThemeSettings')?.addEventListener('click', () => controller.toggleTheme());
 
-  // Auth triggers (Topbar + Settings)
   const handleAuthBtn = () => {
     if (store.getState().user) {
       controller.logout();

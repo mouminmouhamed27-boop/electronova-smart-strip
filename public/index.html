@@ -455,44 +455,37 @@
               </div>
             </section>
 
-            <!-- Voice Settings -->
+            <!-- Smart Assistants Bridge & Hardware Diagnostics -->
             <section class="card" style="display:flex;flex-direction:column;gap:12px">
-              <h3 class="section-title"><i class="fa-solid fa-microphone-lines" style="color:var(--accent)"></i><span>إعدادات الأوامر الصوتية</span></h3>
-              <div class="schedule-times">
-                <div class="field">
-                  <label class="field-label" for="cfgVoiceLang">لغة الميكروفون</label>
-                  <select id="cfgVoiceLang" class="select">
-                    <option value="ar-EG">العربية — مصر (افتراضي)</option>
-                    <option value="en-US">English (US)</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label class="field-label" for="cfgVoiceMode">سرعة التنفيذ</label>
-                  <select id="cfgVoiceMode" class="select">
-                    <option value="instant">فوري (على Interim للأوامر الواضحة)</option>
-                    <option value="final">بعد انتهاء الجملة فقط (Final)</option>
-                  </select>
-                </div>
+              <div class="section-header">
+                <h3 class="section-title"><i class="fa-solid fa-robot" style="color:var(--accent)"></i><span>Google Assistant &amp; Alexa (عبر السيرفر)</span></h3>
+                <span id="settingsAssistantsBadge" class="badge badge-p4">غير مُعدّ</span>
               </div>
+              <p id="settingsAssistantsDesc" class="section-sub">يتصل الباك إند بجسر Smartnest لحساب الفريق بحيث تستقبل أوامر Google Home و Amazon Alexa وتمر على محرك الأمان قبل وصولها للـ ESP32.</p>
               <label class="checkbox-row">
                 <input id="cfgVoiceBeeps" type="checkbox" checked>
                 <span>تشغيل أصوات التنبيه (WebAudio Beeps)</span>
               </label>
+              <div style="border-top:1px solid var(--border);padding-top:10px;display:flex;flex-direction:column;gap:6px;font-size:.76rem">
+                <div class="section-header"><span style="color:var(--dim)">قناة اتصال ESP32:</span><span id="diagConnMode" class="num" style="font-weight:700">Offline</span></div>
+                <div class="section-header"><span style="color:var(--dim)">عنوان IP وإشارة Wi-Fi:</span><span class="num"><span id="diagIp">--</span> • <span id="diagRssi">--</span></span></div>
+                <div class="section-header"><span style="color:var(--dim)">إصدار الفيرموير:</span><span id="diagFw" class="num">--</span></div>
+                <div class="section-header"><span style="color:var(--dim)">آخر سبب فصل أمان:</span><span id="diagLastTrip" class="num" style="color:var(--warn)">لا يوجد</span></div>
+              </div>
             </section>
 
-            <!-- Voice Cheat-Sheet -->
+            <!-- Assistants & AI Cheat-Sheet -->
             <section class="card">
-              <h3 class="section-title" style="margin-bottom:10px"><i class="fa-solid fa-list-check" style="color:var(--accent-2)"></i><span>دليل الأوامر الصوتية</span></h3>
+              <h3 class="section-title" style="margin-bottom:10px"><i class="fa-solid fa-list-check" style="color:var(--accent-2)"></i><span>دليل أوامر Google Assistant / Alexa / AI</span></h3>
               <table class="cheat-table">
                 <thead>
-                  <tr><th>الأمر بالعربي</th><th>الأمر بالإنجليزي</th><th>التأثير</th></tr>
+                  <tr><th>المساعد الصوتي (موبايل / Echo)</th><th>الأمر الذكي في الموقع (AI)</th><th>التأثير</th></tr>
                 </thead>
                 <tbody>
-                  <tr><td>شغل الكل / افتح الكل</td><td class="ltr">turn on all</td><td>تشغيل المخارج الأربعة</td></tr>
-                  <tr><td>افصل الكل / اطفي الكل</td><td class="ltr">all off / shutdown</td><td>فصل المخارج الأربعة</td></tr>
-                  <tr><td>شغل 1 / شغل الراوتر</td><td class="ltr">turn on 1</td><td>تشغيل مخرج 1</td></tr>
-                  <tr><td>شغل واحد وتلاتة</td><td class="ltr">turn on 1 and 3</td><td>تشغيل مخرجين معاً</td></tr>
-                  <tr><td>اقفل التالت / فصل ٣</td><td class="ltr">2 off / 1 and 2 off</td><td>فصل مخارج محددة</td></tr>
+                  <tr><td class="ltr">Alexa, turn on Router</td><td>شغل الراوتر / افتح 1</td><td>تشغيل مخرج 1</td></tr>
+                  <tr><td class="ltr">Hey Google, turn off Computer</td><td>اقفل الكمبيوتر / فصل 2</td><td>فصل مخرج 2</td></tr>
+                  <tr><td class="ltr">Alexa, turn off Power Strip</td><td>اطفي الكل / اقفل كل المخارج</td><td>فصل المخارج الأربعة</td></tr>
+                  <tr><td class="ltr">Hey Google, turn on Outlet 3</td><td>شغل واحد وتلاتة</td><td>تشغيل مخرجين معاً</td></tr>
                 </tbody>
               </table>
             </section>
@@ -502,18 +495,21 @@
       </main>
     </div>
 
-    <!-- ── Floating Persistent Voice Dock (All Screens) ── -->
-    <aside class="voice-dock" aria-label="شريط التحكم الصوتي العائم">
-      <button id="btnVoiceDock" class="voice-mic-btn" aria-label="تشغيل أو إيقاف الأوامر الصوتية">
-        <i id="voiceDockIcon" class="fa-solid fa-microphone"></i>
-        <span id="voiceDockLabel">صوت</span>
+    <!-- ── Floating Smart Assistant & AI Command Bar (All Screens) ── -->
+    <aside class="voice-dock" aria-label="شريط المساعدات الصوتية والأوامر الذكية">
+      <button id="btnAssistantBridgePill" type="button" class="voice-mic-btn" title="حالة ربط Google Assistant و Alexa" aria-label="عرض حالة ربط أليكسا وجوجل">
+        <i class="fa-brands fa-google"></i>
+        <span id="assistantBridgeBadge">AI + المساعد</span>
       </button>
-      <div id="voiceDockPill" class="voice-pill" aria-live="polite">
-        قل: "شغل الراوتر" أو "شغل واحد وتلاتة" أو "all off"
+      <form id="assistantCommandForm" class="assistant-form">
+        <input id="assistantCommandInput" class="assistant-input" type="text" placeholder="اكتب أمرك الذكي (مثلاً: شغل الراوتر أو اطفي الكل)..." aria-label="أمر ذكي للمشترك">
+        <button id="btnAssistantSend" type="submit" class="btn btn-primary btn-sm" style="min-height:40px;border-radius:999px;padding:0 14px" aria-label="تنفيذ الأمر الذكي">
+          <i class="fa-solid fa-paper-plane"></i>
+        </button>
+      </form>
+      <div id="assistantStatusHint" class="assistant-status" aria-live="polite">
+        Google Assistant &amp; Alexa عبر الباك إند
       </div>
-      <button id="btnVoiceLangDock" class="btn btn-ghost btn-sm num" style="min-height:44px;min-width:46px;border-radius:999px;" title="تبديل لغة المايك (ع / EN)" aria-label="تبديل لغة الميكروفون">
-        ع
-      </button>
     </aside>
   </div>
 

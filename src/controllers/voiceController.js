@@ -13,8 +13,8 @@ exports.processVoiceCommand = async (req, res, next) => {
       });
     }
 
-    // Parse the spoken text using our dual-language NLP parser
-    const parsed = voiceService.parseCommand(transcript);
+    // Parse via Gemini AI (if GEMINI_API_KEY configured) or dual-language parser
+    const parsed = await voiceService.parseCommandWithAI(transcript);
 
     if (!parsed.matched) {
       return res.status(422).json({
@@ -24,16 +24,37 @@ exports.processVoiceCommand = async (req, res, next) => {
       });
     }
 
-    // Execute the command via MQTT
+    const actions = Array.isArray(parsed.actions) && parsed.actions.length > 0
+      ? parsed.actions
+      : (parsed.type === 'all' || parsed.type === 'outlet'
+          ? [{ type: parsed.type, id: parsed.id, state: parsed.state }]
+          : []);
+
+    if (parsed.statusOnly || actions.length === 0) {
+      const isAr = language === 'ar' || /[\u0600-\u06FF]/.test(transcript);
+      const feedback = isAr ? parsed.feedbackAr : parsed.feedbackEn;
+      return res.json({
+        success: true,
+        aiPowered: Boolean(parsed.aiPowered),
+        mqttDispatched: false,
+        message: feedback,
+        feedbackSpeech: feedback,
+        command: { type: 'status', actions: [] },
+        deviceState: storage.getDeviceState()
+      });
+    }
+
     let commandResult = null;
     let executionError = null;
     let executionStatus = 403;
 
     try {
-      if (parsed.type === 'all') {
-        commandResult = mqttService.setAllOutlets(parsed.state);
-      } else if (parsed.type === 'outlet') {
-        commandResult = mqttService.setOutletState(parsed.id, parsed.state);
+      for (const act of actions) {
+        if (act.type === 'all') {
+          commandResult = mqttService.setAllOutlets(act.state, 'ai_voice');
+        } else if (act.type === 'outlet') {
+          commandResult = mqttService.setOutletState(act.id, act.state, 'ai_voice');
+        }
       }
     } catch (err) {
       commandResult = null;
@@ -49,19 +70,20 @@ exports.processVoiceCommand = async (req, res, next) => {
       });
     }
 
-    // Determine localized feedback
     const isAr = language === 'ar' || /[\u0600-\u06FF]/.test(transcript);
     const feedback = isAr ? parsed.feedbackAr : parsed.feedbackEn;
 
     return res.json({
       success: true,
+      aiPowered: Boolean(parsed.aiPowered),
       mqttDispatched: commandResult.mqttDispatched,
       message: feedback,
       feedbackSpeech: feedback,
       command: {
         type: parsed.type,
         id: parsed.id || 'all',
-        state: parsed.state
+        state: parsed.state,
+        actions
       },
       deviceState: storage.getDeviceState()
     });

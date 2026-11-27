@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "author": "ElectroNova Team - Unified WSS v3.0",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-esp32-devkit-v1", "id": "esp", "top": 40, "left": -40, "attrs": {} },
+
+    { "type": "wokwi-relay-module", "id": "relay1", "top": -150, "left": 180, "attrs": {} },
+    { "type": "wokwi-relay-module", "id": "relay2", "top": -150, "left": 310, "attrs": {} },
+    { "type": "wokwi-relay-module", "id": "relay3", "top": -150, "left": 440, "attrs": {} },
+    { "type": "wokwi-relay-module", "id": "relay4", "top": -150, "left": 570, "attrs": {} },
+
+    { "type": "wokwi-pushbutton", "id": "btn1", "top": 120, "left": -220, "attrs": { "color": "green", "label": "OUT 1" } },
+    { "type": "wokwi-pushbutton", "id": "btn2", "top": 170, "left": -220, "attrs": { "color": "green", "label": "OUT 2" } },
+    { "type": "wokwi-pushbutton", "id": "btn3", "top": 220, "left": -220, "attrs": { "color": "green", "label": "OUT 3" } },
+    { "type": "wokwi-pushbutton", "id": "btn4", "top": 270, "left": -220, "attrs": { "color": "green", "label": "OUT 4" } },
+
+    { "type": "wokwi-potentiometer", "id": "acs1", "top": 280, "left": 180, "attrs": { "label": "ACS 1" } },
+    { "type": "wokwi-potentiometer", "id": "acs2", "top": 280, "left": 270, "attrs": { "label": "ACS 2" } },
+    { "type": "wokwi-potentiometer", "id": "acs3", "top": 280, "left": 360, "attrs": { "label": "ACS 3" } },
+    { "type": "wokwi-potentiometer", "id": "acs4", "top": 280, "left": 450, "attrs": { "label": "ACS 4" } },
+
+    { "type": "wokwi-led", "id": "wifiLed", "top": 100, "left": 240, "attrs": { "color": "blue", "label": "WiFi" } },
+    { "type": "wokwi-resistor", "id": "r_wifi", "top": 165, "left": 230, "attrs": { "value": "220" } },
+
+    { "type": "wokwi-led", "id": "faultLed", "top": 100, "left": 320, "attrs": { "color": "red", "label": "Fault" } },
+    { "type": "wokwi-resistor", "id": "r_fault", "top": 165, "left": 310, "attrs": { "value": "220" } },
+
+    { "type": "wokwi-buzzer", "id": "bz1", "top": 110, "left": 400, "attrs": { "volume": "0.3" } }
+  ],
+  "connections": [
+    ["esp:GND.1", "relay1:GND", "black", []],
+    ["esp:GND.1", "relay2:GND", "black", []],
+    ["esp:GND.1", "relay3:GND", "black", []],
+    ["esp:GND.1", "relay4:GND", "black", []],
+    ["esp:VIN",   "relay1:VCC", "red",   []],
+    ["esp:VIN",   "relay2:VCC", "red",   []],
+    ["esp:VIN",   "relay3:VCC", "red",   []],
+    ["esp:VIN",   "relay4:VCC", "red",   []],
+    ["esp:D13",   "relay1:IN",  "orange",[]],
+    ["esp:D21",   "relay2:IN",  "orange",[]],
+    ["esp:D19",   "relay3:IN",  "orange",[]],
+    ["esp:D22",   "relay4:IN",  "orange",[]],
+
+    ["esp:D25",   "btn1:1.r",   "green", []],
+    ["esp:D26",   "btn2:1.r",   "green", []],
+    ["esp:D27",   "btn3:1.r",   "green", []],
+    ["esp:D32",   "btn4:1.r",   "green", []],
+    ["esp:GND.2", "btn1:2.r",   "black", []],
+    ["esp:GND.2", "btn2:2.r",   "black", []],
+    ["esp:GND.2", "btn3:2.r",   "black", []],
+    ["esp:GND.2", "btn4:2.r",   "black", []],
+
+    ["acs1:SIG",  "esp:D34",    "purple",[]],
+    ["acs2:SIG",  "esp:D35",    "purple",[]],
+    ["acs3:SIG",  "esp:VP",     "purple",[]],
+    ["acs4:SIG",  "esp:VN",     "purple",[]],
+    ["acs1:VCC",  "esp:3V3",    "red",   []],
+    ["acs2:VCC",  "esp:3V3",    "red",   []],
+    ["acs3:VCC",  "esp:3V3",    "red",   []],
+    ["acs4:VCC",  "esp:3V3",    "red",   []],
+    ["acs1:GND",  "esp:GND.1",  "black", []],
+    ["acs2:GND",  "esp:GND.1",  "black", []],
+    ["acs3:GND",  "esp:GND.1",  "black", []],
+    ["acs4:GND",  "esp:GND.1",  "black", []],
+
+    ["esp:D33",   "r_wifi:1",   "blue",  []],
+    ["r_wifi:2",  "wifiLed:A",  "blue",  []],
+    ["esp:GND.1", "wifiLed:C",  "black", []],
+
+    ["esp:D23",   "r_fault:1",  "red",   []],
+    ["r_fault:2", "faultLed:A", "red",   []],
+    ["esp:GND.1", "faultLed:C", "black", []],
+
+    ["esp:D18",   "bz1:2",      "red",   []],
+    ["bz1:1",     "esp:GND.1",  "black", []]
+  ],
+  "dependencies": {}
+}

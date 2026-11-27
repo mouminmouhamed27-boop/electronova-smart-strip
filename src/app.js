@@ -8,6 +8,7 @@ const apiRoutes = require('./routes');
 const errorHandler = require('./middlewares/errorHandler');
 const mqttService = require('./services/mqttService');
 const keepAliveService = require('./services/keepAliveService');
+const smartnestBridge = require('./services/smartnestBridgeService');
 
 const app = express();
 
@@ -25,7 +26,9 @@ app.get('/health', (req, res) => {
     status: 'ok',
     service: 'ElectroNova Full-Stack',
     mqttConnected: mqttService.isConnected,
+    connectionMode: mqttService.getConnectionMode(),
     deviceId: mqttService.deviceId,
+    assistants: smartnestBridge.getStatus(),
     uptimeSec: Math.round(process.uptime()),
     keepAlive: keepAliveService.getStatus(),
     timestamp: new Date().toISOString()

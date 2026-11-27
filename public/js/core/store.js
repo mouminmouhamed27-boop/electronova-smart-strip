@@ -10,17 +10,33 @@ function createInitialState() {
     cloudStatus: 'connecting', // 'connecting' | 'connected' | 'disconnected'
     deviceId: 'EN_SIM1',
     isOnline: false,
+    connectionMode: 'offline', // 'ws' | 'mqtt' | 'offline'
     lastHeartbeatMs: 0,
     espTime: '--:--:--',
     ntpSynced: true,
     tariffEgp: 1.25,
     user: null,
     token: null,
+    diagnostics: {
+      ip: null,
+      rssi: null,
+      firmwareVersion: null,
+      bootSelfTest: null,
+      lastTripReason: null,
+      overcurrentTrips: 0
+    },
+    assistants: {
+      enabled: false,
+      connected: false,
+      host: null,
+      username: null,
+      linkedChannels: 0
+    },
     outlets: [
-      { id: 1, name: 'راوتر / جهاز أساسي', priority: 1, state: false, currentAmps: 0.0, currentWatts: 0, totalKwh: 0.0 },
-      { id: 2, name: 'كمبيوتر / محطة عمل', priority: 2, state: false, currentAmps: 0.0, currentWatts: 0, totalKwh: 0.0 },
-      { id: 3, name: 'إضاءة المعمل / طرفيات', priority: 3, state: false, currentAmps: 0.0, currentWatts: 0, totalKwh: 0.0 },
-      { id: 4, name: 'أحمال غير حرجة / شواحن', priority: 4, state: false, currentAmps: 0.0, currentWatts: 0, totalKwh: 0.0 }
+      { id: 1, name: 'راوتر / جهاز أساسي', priority: 1, isProtected: true, state: false, currentAmps: 0.0, currentWatts: 0, totalKwh: 0.0 },
+      { id: 2, name: 'كمبيوتر / محطة عمل', priority: 2, isProtected: false, state: false, currentAmps: 0.0, currentWatts: 0, totalKwh: 0.0 },
+      { id: 3, name: 'إضاءة المعمل / طرفيات', priority: 3, isProtected: false, state: false, currentAmps: 0.0, currentWatts: 0, totalKwh: 0.0 },
+      { id: 4, name: 'أحمال غير حرجة / شواحن', priority: 4, isProtected: false, state: false, currentAmps: 0.0, currentWatts: 0, totalKwh: 0.0 }
     ],
     schedules: [
       { outletId: 1, enabled: false, onTime: '08:00', offTime: '23:00' },
@@ -37,6 +53,12 @@ function createInitialState() {
       costEgp: 0.0,
       isOverheatLocked: false,
       isOverloadBlocked: false,
+      isOvercurrentLatched: false,
+      isSensorFault: false,
+      isTempSensorFault: false,
+      isCurrentSensorFault: false,
+      overcurrentTrips: 0,
+      lastTripReason: null,
       isContinuousWarning: false,
       isVoltageFault: false,
       alert: 'OK'
@@ -47,14 +69,10 @@ function createInitialState() {
     pendingState: {},  // { [outletId]: boolean }
     history: [],       // [{ timestamp, watts }] max 30
     logs: [],          // [{ text, level, time }] max 100
-    voice: {
-      supported: true,
-      active: false,
-      lang: 'ar-EG',
-      mode: 'instant',
-      beeps: true,
-      pillText: 'قل: "شغل الراوتر" أو "شغل واحد وتلاتة" أو "all off"',
-      pillMode: 'idle' // 'idle' | 'hearing' | 'ok' | 'bad'
+    assistantBar: {
+      busy: false,
+      statusText: 'تحدث لـ Google Assistant / Alexa أو اكتب أمرك الذكي هنا (مثال: شغل الراوتر)',
+      statusMode: 'idle' // 'idle' | 'working' | 'ok' | 'bad'
     }
   };
 }

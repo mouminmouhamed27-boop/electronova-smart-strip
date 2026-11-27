@@ -119,7 +119,7 @@ export function createBackendTransport(_config, handlers) {
         if (ws && ws.readyState === 1) {
           try { ws.send(JSON.stringify({ type: 'ping' })); } catch (_) {}
         }
-      }, 240000); // every 4 min while any dashboard tab is open
+      }, 240000);
     },
     disconnect() {
       manuallyClosed = true;
@@ -137,7 +137,6 @@ export function createBackendTransport(_config, handlers) {
     },
     async publish(cmdObj) {
       if (cmdObj.type === 'sync' && !getToken()) {
-        // Safe public refresh when unauthenticated
         const live = await api('/telemetry/live');
         if (live?.device) {
           handlers.onMessage?.({ kind: 'telemetry', data: live.device, retained: true });
@@ -183,6 +182,8 @@ export function createBackendTransport(_config, handlers) {
     getMe: () => api('/auth/me'),
     switchDevice: (deviceId) => api('/telemetry/device', 'POST', { deviceId }),
     unlockSafety: () => api('/safety/unlock', 'POST'),
-    sequentialRestore: (delayMs = 3000) => api('/safety/sequential-restore', 'POST', { delayMs })
+    sequentialRestore: (delayMs = 3000) => api('/safety/sequential-restore', 'POST', { delayMs }),
+    updateOutletMeta: (id, meta) => api(`/outlets/${id}`, 'PATCH', meta),
+    sendVoiceCommand: (transcript, language = 'ar') => api('/voice/command', 'POST', { transcript, language })
   };
 }

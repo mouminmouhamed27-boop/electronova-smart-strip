@@ -4,12 +4,18 @@
 
 import { store } from '../core/store.js';
 import { STRINGS } from '../strings.js';
-import { isOverheatLocked, isOverloadLocked, isDeviceReady } from '../core/safety.js';
+import {
+  isOverheatLocked,
+  isOverloadLocked,
+  isSensorFaultLocked,
+  isOvercurrentLatched,
+  isDeviceReady
+} from '../core/safety.js';
 import { renderPowerChart } from './chart.js';
 import { patchOutletCards } from './outletCards.js';
 import { renderEnergyView } from './energyView.js';
 
-const RING_CIRCUMFERENCE = 2 * Math.PI * 24; // r=24 -> ~150.8
+const RING_CIRCUMFERENCE = 2 * Math.PI * 24;
 
 function initQuickTiles(controller) {
   const wrap = document.getElementById('quickTiles');
@@ -17,7 +23,7 @@ function initQuickTiles(controller) {
   wrap.innerHTML = [1, 2, 3, 4].map((id) => `
     <button id="quickTile${id}" class="quick-tile" type="button" aria-label="تبديل سريع لمخرج ${id}">
       <div>
-        <div class="quick-tile-title">مخرج ${id}</div>
+        <div id="quickTileTitle${id}" class="quick-tile-title">مخرج ${id}</div>
         <div id="quickTileMeta${id}" class="quick-tile-meta num">0 W</div>
       </div>
       <span id="quickTileDot${id}" class="dot"></span>
@@ -83,7 +89,6 @@ export function triggerShake(targetKey) {
 export function initRenderer(controller) {
   initQuickTiles(controller);
 
-  // Wire Home + Header action buttons
   document.getElementById('espChip')?.addEventListener('click', () => controller.requestSync());
   document.getElementById('cloudChip')?.addEventListener('click', () => controller.reconnect());
   document.getElementById('btnMasterOn')?.addEventListener('click', () => controller.setAll(true));
@@ -123,8 +128,9 @@ export function initRenderer(controller) {
     const espText = document.getElementById('espStatusText');
     if (espChip && espText) {
       espChip.className = state.isOnline ? 'chip chip-ok' : 'chip chip-bad';
+      const modeTag = state.connectionMode === 'ws' ? ' (WSS 443)' : state.connectionMode === 'mqtt' ? ' (MQTT)' : '';
       espText.textContent = state.isOnline
-        ? STRINGS.espOnline
+        ? `${STRINGS.espOnline}${modeTag}`
         : state.lastHeartbeatMs === 0
           ? STRINGS.espWaiting
           : STRINGS.espOffline;
@@ -139,7 +145,7 @@ export function initRenderer(controller) {
       cloudText.textContent = txtMap[state.cloudStatus] || state.cloudStatus;
     }
 
-    // 3. Auth UI Sync (Topbar + Settings)
+    // 3. Auth UI Sync
     const authLabel = document.getElementById('authLabelTopbar');
     const btnAuthTopbar = document.getElementById('btnAuthTopbar');
     const accName = document.getElementById('settingsAccountName');
@@ -160,15 +166,21 @@ export function initRenderer(controller) {
     }
 
     // 4. Safety Banner
+    const sensorFault = isSensorFaultLocked(state.safety);
     const overheat = isOverheatLocked(state.safety);
+    const latched = isOvercurrentLatched(state.safety);
     const overload = isOverloadLocked(state.safety);
     const banner = document.getElementById('alertBanner');
     const bannerMsg = document.getElementById('alertBannerMsg');
     const bannerActions = document.getElementById('alertBannerActions');
     if (banner && bannerMsg) {
       banner.classList.remove('hidden', 'banner-warn');
-      if (overheat) {
+      if (sensorFault) {
+        bannerMsg.textContent = STRINGS.sensorFaultBanner;
+      } else if (overheat) {
         bannerMsg.textContent = STRINGS.overheatBanner;
+      } else if (latched) {
+        bannerMsg.textContent = STRINGS.latchedBanner;
       } else if (overload) {
         bannerMsg.textContent = STRINGS.overloadBanner(state.safety.alert);
       } else if (state.safety.isVoltageFault) {
@@ -185,8 +197,8 @@ export function initRenderer(controller) {
     // 5. KPI Cards
     const temp = Number(state.safety.temperatureC ?? 25);
     const tempPct = Math.min(100, Math.max(0, (temp / 65) * 100));
-    const tempColor = temp > 60 ? 'var(--danger)' : temp >= 45 ? 'var(--warn)' : 'var(--accent-2)';
-    document.getElementById('kpiTemp').textContent = temp.toFixed(1);
+    const tempColor = temp >= 65 ? 'var(--danger)' : temp >= 55 ? 'var(--warn)' : 'var(--accent-2)';
+    document.getElementById('kpiTemp').textContent = sensorFault && state.safety.isTempSensorFault ? 'ERR' : temp.toFixed(1);
     const barTemp = document.getElementById('barTemp');
     barTemp.style.width = `${tempPct}%`;
     barTemp.style.background = tempColor;
@@ -199,7 +211,7 @@ export function initRenderer(controller) {
     const amps = Number(state.safety.totalAmps || 0);
     const ampsColor = amps > 15.0 ? 'var(--danger)' : amps >= 12.8 ? 'var(--warn)' : 'var(--accent)';
     const kpiAmps = document.getElementById('kpiAmps');
-    kpiAmps.textContent = amps.toFixed(1);
+    kpiAmps.textContent = sensorFault && state.safety.isCurrentSensorFault ? 'ERR' : amps.toFixed(1);
     kpiAmps.style.color = ampsColor;
     const barAmps = document.getElementById('barAmps');
     barAmps.style.width = `${Math.min(100, (amps / 16) * 100)}%`;
@@ -215,7 +227,7 @@ export function initRenderer(controller) {
     document.getElementById('kpiCost').textContent = Number(state.safety.costEgp || 0).toFixed(2);
     document.getElementById('kpiTariff').textContent = `${Number(state.tariffEgp || 1.25).toFixed(2)} EGP/kWh`;
 
-    // 6. Master ON / OFF lock UI (locked when ESP32 offline, or ON locked during overheat/overload)
+    // 6. Master ON / OFF lock UI
     const ready = isDeviceReady(state);
     const btnMasterOn = document.getElementById('btnMasterOn');
     const btnMasterOff = document.getElementById('btnMasterOff');
@@ -227,10 +239,20 @@ export function initRenderer(controller) {
       iconMasterOn.className = 'fa-solid fa-plug-circle-xmark';
       labelMasterOn.textContent = 'بانتظار ESP32';
       btnMasterOff.className = 'btn btn-locked';
+    } else if (sensorFault) {
+      btnMasterOn.className = 'btn btn-locked';
+      iconMasterOn.className = 'fa-solid fa-triangle-exclamation';
+      labelMasterOn.textContent = STRINGS.masterOnSensorFault;
+      btnMasterOff.className = 'btn btn-danger';
     } else if (overheat) {
       btnMasterOn.className = 'btn btn-locked';
       iconMasterOn.className = 'fa-solid fa-lock';
       labelMasterOn.textContent = STRINGS.masterOnOverheat;
+      btnMasterOff.className = 'btn btn-danger';
+    } else if (latched) {
+      btnMasterOn.className = 'btn btn-locked';
+      iconMasterOn.className = 'fa-solid fa-lock';
+      labelMasterOn.textContent = STRINGS.masterOnLatched;
       btnMasterOff.className = 'btn btn-danger';
     } else if (overload) {
       btnMasterOn.className = 'btn btn-locked';
@@ -247,9 +269,11 @@ export function initRenderer(controller) {
     // 7. Quick Outlet Tiles
     state.outlets.forEach((o) => {
       const tile = document.getElementById(`quickTile${o.id}`);
+      const title = document.getElementById(`quickTileTitle${o.id}`);
       const meta = document.getElementById(`quickTileMeta${o.id}`);
       const dot = document.getElementById(`quickTileDot${o.id}`);
       if (!tile) return;
+      if (title) title.textContent = o.name ? o.name.split('/')[0].trim() : `مخرج ${o.id}`;
       tile.classList.remove('tile-on', 'tile-locked');
       if (!ready) {
         tile.classList.add('tile-locked');
@@ -259,17 +283,17 @@ export function initRenderer(controller) {
         tile.classList.add('tile-on');
         dot.style.background = 'var(--accent-2)';
         if (meta) meta.textContent = `${Math.round(o.currentWatts || 0)}W`;
-      } else if (overheat || overload) {
+      } else if (sensorFault || overheat || latched || overload) {
         tile.classList.add('tile-locked');
         dot.style.background = 'var(--danger)';
-        if (meta) meta.textContent = 'OFF';
+        if (meta) meta.textContent = 'محظور';
       } else {
         dot.style.background = 'var(--mute)';
         if (meta) meta.textContent = 'OFF';
       }
     });
 
-    // 8. SVG Chart & Logs (update when reference changes)
+    // 8. SVG Chart & Logs
     if (state.history !== lastHistoryRef) {
       lastHistoryRef = state.history;
       renderPowerChart(state.history);
@@ -283,23 +307,59 @@ export function initRenderer(controller) {
     patchOutletCards(state);
     renderEnergyView(state);
 
-    // 10. Floating Voice Dock
-    const btnVoice = document.getElementById('btnVoiceDock');
-    const voiceIcon = document.getElementById('voiceDockIcon');
-    const voiceLabel = document.getElementById('voiceDockLabel');
-    const voicePill = document.getElementById('voiceDockPill');
-    const btnVoiceLang = document.getElementById('btnVoiceLangDock');
-    if (btnVoice && voicePill) {
-      btnVoice.classList.toggle('live', state.voice.active);
-      btnVoice.disabled = !state.voice.supported;
-      voiceIcon.className = state.voice.active ? 'fa-solid fa-stop-circle' : 'fa-solid fa-microphone';
-      voiceLabel.textContent = state.voice.active ? 'إيقاف' : 'صوت';
-      voicePill.textContent = state.voice.pillText;
-      voicePill.className = `voice-pill ${state.voice.pillMode || ''}`;
+    // 10. Floating Smart Assistants Dock & Settings Bridge Cards
+    const pillBtn = document.getElementById('btnAssistantBridgePill');
+    const pillLabel = document.getElementById('assistantBridgeBadge');
+    const statusHint = document.getElementById('assistantStatusHint');
+    const asst = state.assistants || {};
+
+    if (pillBtn && pillLabel) {
+      if (asst.enabled && asst.connected) {
+        pillBtn.className = 'voice-mic-btn live-ok';
+        pillLabel.textContent = 'Alexa & Google';
+      } else if (asst.enabled) {
+        pillBtn.className = 'voice-mic-btn';
+        pillLabel.textContent = 'ربط سحابي...';
+      } else {
+        pillBtn.className = 'voice-mic-btn';
+        pillLabel.textContent = 'AI + المساعد';
+      }
     }
-    if (btnVoiceLang) {
-      btnVoiceLang.textContent = state.voice.lang.startsWith('ar') ? 'ع' : 'EN';
+    if (statusHint && state.assistantBar?.statusText) {
+      statusHint.textContent = state.assistantBar.statusText;
+      statusHint.className = `assistant-status ${state.assistantBar.statusMode || ''}`;
     }
+
+    // Settings Bridge + Hardware Diagnostics readout
+    const bridgeBadge = document.getElementById('settingsAssistantsBadge');
+    const bridgeDesc = document.getElementById('settingsAssistantsDesc');
+    if (bridgeBadge && bridgeDesc) {
+      if (asst.enabled && asst.connected) {
+        bridgeBadge.className = 'badge badge-p1';
+        bridgeBadge.textContent = `متصل (${asst.linkedChannels || 0} مخارج)`;
+        bridgeDesc.textContent = `حساب Smartnest (${asst.username || 'مرتبط'}) متصل عبر الباك إند وجاهز لأوامر Alexa و Google Home.`;
+      } else if (asst.enabled) {
+        bridgeBadge.className = 'badge badge-p3';
+        bridgeBadge.textContent = 'إعادة اتصال...';
+        bridgeDesc.textContent = 'الباك إند يعيد الاتصال بجسر Smartnest السحابي الآن.';
+      } else {
+        bridgeBadge.className = 'badge badge-p4';
+        bridgeBadge.textContent = 'غير مُعدّ بالسيرفر';
+        bridgeDesc.textContent = 'أضف SMARTNEST_USERNAME و SMARTNEST_API_KEY و SMARTNEST_DEVICE_IDS في متغيرات Railway لربط Alexa و Google Assistant من السيرفر.';
+      }
+    }
+
+    const diagConn = document.getElementById('diagConnMode');
+    const diagIp = document.getElementById('diagIp');
+    const diagRssi = document.getElementById('diagRssi');
+    const diagFw = document.getElementById('diagFw');
+    const diagLastTrip = document.getElementById('diagLastTrip');
+    const d = state.diagnostics || {};
+    if (diagConn) diagConn.textContent = state.isOnline ? (state.connectionMode === 'ws' ? 'WSS Port 443 (/ws/device)' : 'EMQX MQTT TLS') : 'Offline';
+    if (diagIp) diagIp.textContent = d.ip || '--';
+    if (diagRssi) diagRssi.textContent = d.rssi !== null && d.rssi !== undefined ? `${d.rssi} dBm` : '--';
+    if (diagFw) diagFw.textContent = d.firmwareVersion || '--';
+    if (diagLastTrip) diagLastTrip.textContent = d.lastTripReason || state.safety.lastTripReason || 'لا يوجد فصل أمان';
   }
 
   store.subscribe(render);

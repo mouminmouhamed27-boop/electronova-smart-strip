@@ -3,6 +3,8 @@ const EventEmitter = require('events');
 const config = require('../config');
 const storage = require('./storageService');
 const safetyService = require('./safetyService');
+const deviceGateway = require('./deviceGateway');
+const smartnestBridge = require('./smartnestBridgeService');
 
 class MqttService extends EventEmitter {
   constructor() {
@@ -15,6 +17,16 @@ class MqttService extends EventEmitter {
       state: config.mqtt.topicState,
       lwt: config.mqtt.topicLwt,
     };
+  }
+
+  isDeviceTransportConnected() {
+    return Boolean(deviceGateway.isConnected(this.deviceId) || this.isConnected);
+  }
+
+  getConnectionMode() {
+    if (deviceGateway.isConnected(this.deviceId)) return 'ws';
+    if (this.isConnected && storage.getDeviceState().isOnline) return 'mqtt';
+    return 'offline';
   }
 
   connect() {
@@ -59,9 +71,12 @@ class MqttService extends EventEmitter {
 
       this.client.on('offline', () => {
         this.isConnected = false;
-        storage.setDeviceOffline();
-        this.emit('telemetry', storage.getDeviceState());
-        console.warn('⚠️ [MQTT Service] Client went offline; auto-reconnect active.');
+        if (!deviceGateway.isConnected(this.deviceId)) {
+          storage.setDeviceOffline();
+          smartnestBridge.syncFullState();
+          this.emit('telemetry', storage.getDeviceState());
+        }
+        console.warn('⚠️ [MQTT Service] EMQX client went offline; auto-reconnect active.');
       });
 
       this.client.on('reconnect', () => {
@@ -70,11 +85,14 @@ class MqttService extends EventEmitter {
 
       this.client.on('close', () => {
         if (this.isConnected) {
-          console.warn(`⚠️ [MQTT Service] Connection closed.`);
+          console.warn(`⚠️ [MQTT Service] EMQX connection closed.`);
         }
         this.isConnected = false;
-        storage.setDeviceOffline();
-        this.emit('telemetry', storage.getDeviceState());
+        if (!deviceGateway.isConnected(this.deviceId)) {
+          storage.setDeviceOffline();
+          smartnestBridge.syncFullState();
+          this.emit('telemetry', storage.getDeviceState());
+        }
         this.emit('disconnected');
       });
 
@@ -91,7 +109,6 @@ class MqttService extends EventEmitter {
         console.error(`❌ [MQTT Service] Failed to subscribe to topics:`, err);
       } else {
         console.log(`📡 [MQTT Service] Subscribed to:`, topics);
-        // Request instant sync from ESP32
         this.publishCommand({ type: 'sync' });
       }
     });
@@ -108,7 +125,6 @@ class MqttService extends EventEmitter {
     const oldTopics = [this.topics.state, this.topics.lwt];
     this.deviceId = cleanId;
     this.topics = config.mqtt.buildTopics(cleanId, false);
-    // Keep config synced in memory
     config.mqtt.deviceId = cleanId;
     config.mqtt.topicCmd = this.topics.cmd;
     config.mqtt.topicState = this.topics.state;
@@ -126,9 +142,22 @@ class MqttService extends EventEmitter {
         this.subscribeToActiveTopics();
       });
     }
+    if (deviceGateway.isConnected(cleanId)) {
+      storage.setDeviceOnline('ws');
+      deviceGateway.sendCommand(cleanId, { type: 'sync' });
+    }
 
+    smartnestBridge.syncFullState({ force: true });
     this.emit('telemetry', storage.getDeviceState());
     return { deviceId: this.deviceId, topics: this.topics };
+  }
+
+  handleDeviceTelemetry(payload, { retained = false, connectionMode = 'mqtt' } = {}) {
+    const updatedDevice = storage.recordTelemetry(payload, { retained, connectionMode });
+    safetyService.evaluateTelemetry(payload, this);
+    smartnestBridge.syncFullState();
+    this.emit('telemetry', updatedDevice);
+    return updatedDevice;
   }
 
   handleIncomingMessage(topic, messageStr, { retained = false } = {}) {
@@ -136,11 +165,15 @@ class MqttService extends EventEmitter {
       if (topic === this.topics.lwt) {
         const statusText = messageStr.trim().toLowerCase();
         if (statusText === 'offline') {
-          storage.setDeviceOffline();
-          storage.logEvent({ source: 'esp32_lwt', action: 'offline', details: `LWT offline (${this.deviceId})` });
+          if (!deviceGateway.isConnected(this.deviceId)) {
+            storage.setDeviceOffline();
+            storage.logEvent({ source: 'esp32_lwt', action: 'offline', details: `LWT offline (${this.deviceId})` });
+            smartnestBridge.syncFullState({ force: true });
+          }
         } else if (statusText === 'online') {
-          storage.setDeviceOnline();
+          storage.setDeviceOnline(deviceGateway.isConnected(this.deviceId) ? 'ws' : 'mqtt');
           storage.logEvent({ source: 'esp32_lwt', action: 'online', details: `LWT online (${this.deviceId})` });
+          smartnestBridge.syncFullState({ force: true });
         }
         this.emit('telemetry', storage.getDeviceState());
         return;
@@ -148,10 +181,7 @@ class MqttService extends EventEmitter {
 
       if (topic === this.topics.state) {
         const payload = JSON.parse(messageStr);
-        const updatedDevice = storage.recordTelemetry(payload, { retained });
-        // Run hardware safety & load shedding evaluations
-        safetyService.evaluateTelemetry(payload, this);
-        this.emit('telemetry', updatedDevice);
+        this.handleDeviceTelemetry(payload, { retained, connectionMode: 'mqtt' });
       }
     } catch (err) {
       console.warn(`⚠️ [MQTT Service] Could not parse MQTT message:`, err.message);
@@ -159,25 +189,31 @@ class MqttService extends EventEmitter {
   }
 
   publishCommand(cmdObject) {
-    if (!this.client || !this.isConnected) {
-      console.warn(`⚠️ [MQTT Service] Cannot publish command (Offline/Mock):`, JSON.stringify(cmdObject));
-      return false;
+    // 1. Prefer direct ESP32 WebSocket (/ws/device over port 443) when connected
+    if (deviceGateway.sendCommand(this.deviceId, cmdObject)) {
+      return true;
     }
 
-    try {
-      const payload = JSON.stringify(cmdObject);
-      this.client.publish(this.topics.cmd, payload, { qos: 1 }, (err) => {
-        if (err) {
-          console.error(`❌ [MQTT Service] Publish command failed:`, err.message);
-        } else {
-          console.log(`📤 [MQTT Service] Published to ${this.topics.cmd}:`, payload);
-        }
-      });
-      return true;
-    } catch (err) {
-      console.error(`❌ [MQTT Service] Error serializing command:`, err.message);
-      return false;
+    // 2. Fallback to EMQX MQTT broker when connected
+    if (this.client && this.isConnected) {
+      try {
+        const payload = JSON.stringify(cmdObject);
+        this.client.publish(this.topics.cmd, payload, { qos: 1 }, (err) => {
+          if (err) {
+            console.error(`❌ [MQTT Service] Publish command failed:`, err.message);
+          } else {
+            console.log(`📤 [MQTT Service] Published to ${this.topics.cmd}:`, payload);
+          }
+        });
+        return true;
+      } catch (err) {
+        console.error(`❌ [MQTT Service] Error serializing command:`, err.message);
+        return false;
+      }
     }
+
+    console.warn(`⚠️ [Device Router] Cannot dispatch command (ESP32 WS & MQTT offline):`, JSON.stringify(cmdObject));
+    return false;
   }
 
   _createSafetyError(message) {
@@ -188,8 +224,8 @@ class MqttService extends EventEmitter {
 
   requireDeviceConnected() {
     const dev = storage.getDeviceState();
-    if (!this.isConnected) {
-      const err = new Error('🚫 Action rejected: Cloud MQTT broker is not connected.');
+    if (!this.isDeviceTransportConnected()) {
+      const err = new Error('🚫 Action rejected: Neither ESP32 WebSocket (/ws/device) nor EMQX broker is connected.');
       err.status = 503;
       throw err;
     }
@@ -201,53 +237,60 @@ class MqttService extends EventEmitter {
     return dev;
   }
 
-  // --- Device Safety Protected Actions (Unified Mohamed Ayman Contract Format) ---
-  setOutletState(outletId, state) {
+  _assertSafeToTurnOn(dev) {
+    if (dev.safety.isSensorFault) {
+      throw this._createSafetyError('🚨 Action rejected: Hardware sensor fault (DS18B20 or ACS712 disconnected)!');
+    }
+    if (dev.safety.isOverheatLocked) {
+      throw this._createSafetyError('🚫 Action rejected: Overheat lock is active (>=65°C)!');
+    }
+    if (dev.safety.isOvercurrentLatched) {
+      throw this._createSafetyError('🔒 Action rejected: 3-Trip Overcurrent Latch active! Inspect loads & unlock manually.');
+    }
+    if (dev.safety.isOverloadBlocked) {
+      throw this._createSafetyError('⚡ Action rejected: Overload limit reached (>16A)!');
+    }
+  }
+
+  // --- Device Safety Protected Actions (Single Source of Truth) ---
+  setOutletState(outletId, state, source = 'api_backend') {
     const dev = this.requireDeviceConnected();
-    if (state && dev.safety.isOverheatLocked) {
-      throw this._createSafetyError(`🚫 Action rejected: Overheat lock is active (>65°C)!`);
-    }
-    if (state && dev.safety.isOverloadBlocked) {
-      throw this._createSafetyError(`⚡ Action rejected: Overload limit reached (>16A)!`);
-    }
+    if (state) this._assertSafeToTurnOn(dev);
 
     const ok = this.publishCommand({ type: 'outlet', id: outletId, state: Boolean(state) });
     if (!ok) {
-      const err = new Error('🚫 Action rejected: Failed to publish command to MQTT broker.');
+      const err = new Error('🚫 Action rejected: Failed to dispatch command to ESP32.');
       err.status = 503;
       throw err;
     }
     storage.updateOutletState(outletId, state);
     storage.logEvent({
-      source: 'api_backend',
+      source,
       action: `outlet_${state ? 'on' : 'off'}`,
       details: { outletId, state: Boolean(state), mqttDispatched: ok }
     });
+    smartnestBridge.syncFullState();
     this.emit('telemetry', storage.getDeviceState());
     return { ok: true, mqttDispatched: ok };
   }
 
-  setAllOutlets(state) {
+  setAllOutlets(state, source = 'api_backend') {
     const dev = this.requireDeviceConnected();
-    if (state && dev.safety.isOverheatLocked) {
-      throw this._createSafetyError(`🚫 Action rejected: Overheat lock is active (>65°C)!`);
-    }
-    if (state && dev.safety.isOverloadBlocked) {
-      throw this._createSafetyError(`⚡ Action rejected: Overload limit reached (>16A)!`);
-    }
+    if (state) this._assertSafeToTurnOn(dev);
 
     const ok = this.publishCommand({ type: 'all', state: Boolean(state) });
     if (!ok) {
-      const err = new Error('🚫 Action rejected: Failed to publish command to MQTT broker.');
+      const err = new Error('🚫 Action rejected: Failed to dispatch command to ESP32.');
       err.status = 503;
       throw err;
     }
     storage.updateAllOutlets(state);
     storage.logEvent({
-      source: 'api_backend',
+      source,
       action: `master_${state ? 'on' : 'off'}`,
       details: { state: Boolean(state), mqttDispatched: ok }
     });
+    smartnestBridge.syncFullState();
     this.emit('telemetry', storage.getDeviceState());
     return { ok: true, mqttDispatched: ok };
   }
@@ -262,7 +305,7 @@ class MqttService extends EventEmitter {
       off: offTime
     });
     if (!ok) {
-      const err = new Error('🚫 Action rejected: Failed to publish schedule command to MQTT broker.');
+      const err = new Error('🚫 Action rejected: Failed to dispatch schedule command to ESP32.');
       err.status = 503;
       throw err;
     }
@@ -278,15 +321,10 @@ class MqttService extends EventEmitter {
 
   setTimer(outletId, delaySec) {
     const dev = this.requireDeviceConnected();
-    const outlet = dev.outlets.find(o => o.id === outletId);
+    const outlet = dev.outlets.find((o) => o.id === outletId);
     const targetState = outlet ? !outlet.state : false;
 
-    if (targetState && dev.safety.isOverheatLocked) {
-      throw this._createSafetyError(`🚫 Cannot schedule ON timer during Overheat safety lock!`);
-    }
-    if (targetState && dev.safety.isOverloadBlocked) {
-      throw this._createSafetyError(`⚡ Cannot schedule ON timer during Overload limit (>16A)!`);
-    }
+    if (targetState) this._assertSafeToTurnOn(dev);
 
     const parsedSec = parseInt(delaySec, 10);
     const ok = this.publishCommand({
@@ -296,7 +334,7 @@ class MqttService extends EventEmitter {
       delaySec: parsedSec
     });
     if (!ok) {
-      const err = new Error('🚫 Action rejected: Failed to publish timer command to MQTT broker.');
+      const err = new Error('🚫 Action rejected: Failed to dispatch timer command to ESP32.');
       err.status = 503;
       throw err;
     }
@@ -313,7 +351,7 @@ class MqttService extends EventEmitter {
     this.requireDeviceConnected();
     const ok = this.publishCommand({ type: 'resetEnergy' });
     if (!ok) {
-      const err = new Error('🚫 Action rejected: Failed to publish resetEnergy command to MQTT broker.');
+      const err = new Error('🚫 Action rejected: Failed to dispatch resetEnergy command to ESP32.');
       err.status = 503;
       throw err;
     }
