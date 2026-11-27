@@ -1,0 +1,15 @@
+# ESP32 Libraries Required
+
+## Install via Arduino IDE → Sketch → Include Library → Manage Libraries
+
+| Library | Version | Install Name |
+|---------|---------|--------------|
+| PubSubClient | ≥ 2.8 | `PubSubClient` by Nick O'Leary |
+| ArduinoJson | ≥ 7.x | `ArduinoJson` by Benoit Blanchon |
+
+## Board Setup (Arduino IDE)
+1. File → Preferences → Additional Boards Manager URLs:
+   `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
+2. Tools → Board → Boards Manager → search `esp32` → install **esp32 by Espressif Systems**
+3. Tools → Board → ESP32 Arduino → **ESP32 Dev Module**
+4. Tools → Upload Speed → **115200**
